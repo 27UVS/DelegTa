@@ -4,9 +4,9 @@ import json
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton,
-    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea
+    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog
 )
-from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtGui import QPixmap, QIcon, QColor
 from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -420,7 +420,9 @@ class EditPositionsOverlay(QFrame):
     def load_positions(self):
         if os.path.exists(self.json_path):
             with open(self.json_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("positions", [])
+                data = json.load(f).get("positions", [])
+                # Конвертация старого формата (строки -> словари)
+                return [{"name": pos, "color": "#FFFFFF"} if isinstance(pos, str) else pos for pos in data]
         return []
 
     def save_positions(self):
@@ -441,9 +443,19 @@ class EditPositionsOverlay(QFrame):
             row_layout.setContentsMargins(0, 0, 0, 0)
 
             # Текст должности
-            label = QLabel(pos)
-            label.setStyleSheet("font-size: 22px; color: white")
+            label = QLabel(pos["name"])
+            label.setStyleSheet(f"font-size: 22px; color: {pos['color']}")
             row_layout.addWidget(label)
+
+            # Кнопка выбора цвета
+            color_btn = QPushButton()
+            color_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/color.png")))  # Иконка палитры
+            # source: https://www.flaticon.com/ru/free-icon/watercolor_6651740
+            color_btn.setIconSize(QSize(20, 20))
+            color_btn.setFixedSize(30, 30)
+            color_btn.setStyleSheet("border: none;")
+            color_btn.clicked.connect(lambda _, i=idx: self.change_color(i))
+            row_layout.addWidget(color_btn)
 
             # Кнопка редактирования
             edit_btn = QPushButton()
@@ -469,8 +481,8 @@ class EditPositionsOverlay(QFrame):
 
     def add_position(self):
         new_pos = self.position_input.text().strip()
-        if new_pos and new_pos not in self.positions:
-            self.positions.append(new_pos)
+        if new_pos and all(pos["name"] != new_pos for pos in self.positions):
+            self.positions.append({"name": new_pos, "color": "#FFFFFF"})
             self.save_positions()
             self.refresh_list()
             self.position_input.clear()
@@ -478,7 +490,6 @@ class EditPositionsOverlay(QFrame):
             QMessageBox.warning(self, "Ошибка", "Такая должность уже есть или поле пустое!")
 
     def edit_position(self, index):
-        # Заменим QLabel на QLineEdit для редактирования
         row_widget = self.positions_layout.itemAt(index).widget()
         for i in range(row_widget.layout().count()):
             widget = row_widget.layout().itemAt(i).widget()
@@ -491,7 +502,6 @@ class EditPositionsOverlay(QFrame):
                     padding: 4px;
                 """)
                 layout = row_widget.layout()
-                assert layout is not None
                 layout.insertWidget(0, editor)
                 editor.returnPressed.connect(lambda: self.save_edited_position(index, editor))
                 editor.setFocus()
@@ -499,12 +509,24 @@ class EditPositionsOverlay(QFrame):
 
     def save_edited_position(self, index, editor):
         new_text = editor.text().strip()
-        if new_text and new_text not in self.positions:
-            self.positions[index] = new_text
+        current_text = self.positions[index]["name"]
+
+        # Проверка: либо имя не пустое и не дублирует чужие
+        if new_text and (new_text == current_text or all(
+                pos["name"] != new_text for i, pos in enumerate(self.positions) if i != index)):
+            self.positions[index]["name"] = new_text
             self.save_positions()
             self.refresh_list()
         else:
             QMessageBox.warning(self, "Ошибка", "Название пустое или уже существует!")
+
+    def change_color(self, index):
+        current_color = self.positions[index]["color"]
+        color = QColorDialog.getColor(QColor(current_color), self, "Выберите цвет должности")
+        if color.isValid():
+            self.positions[index]["color"] = color.name()
+            self.save_positions()
+            self.refresh_list()
 
     def delete_position(self, index):
         del self.positions[index]
