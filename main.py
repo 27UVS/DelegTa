@@ -4,7 +4,7 @@ import json
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton,
-    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog
+    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy
 )
 from PySide6.QtGui import QPixmap, QIcon, QColor
 from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve
@@ -17,6 +17,7 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle("DelegTa")
         self.setWindowIcon(QIcon(os.path.join(base_dir, "images/interface/icon.png")))
+        self.json_path = os.path.join(os.path.dirname(__file__), "members.json")
 
         # --- Загружаем сохранённый фон ---
         self.settings = QSettings("MyCompany", "DelegTaApp")
@@ -39,7 +40,7 @@ class MainWindow(QWidget):
 
         self.settings_btn = HoverButton(self.btn_default, self.btn_active, self)
         self.settings_btn.clicked.connect(self.toggle_settings_panel)
-        self.settings_btn.raise_()  # Поверх фона
+        # self.settings_btn.raise_()
 
         # --- Основной контент ---
         main_layout = QVBoxLayout()
@@ -51,30 +52,28 @@ class MainWindow(QWidget):
         content_layout.setContentsMargins(10, 10, 10, 10)
         content_layout.setSpacing(0)
 
-        # Левая панель участников
+        # --- Панель участников с кнопкой их добавления ---
         self.members_panel = QFrame()
-        self.members_panel.setFixedWidth(250)
+        self.members_panel.setFixedWidth(300)
         self.members_panel.setStyleSheet("""
             background-color: rgb(30, 30, 30);
             border: none;
             color: white;
         """)
+
         members_layout = QVBoxLayout()
         members_layout.setContentsMargins(15, 15, 15, 15)
 
-        # Верхняя строка: Заголовок + "+"
+        #  Заголовок
         header_layout = QHBoxLayout()
         title_label = QLabel("Участники")
         title_label.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
         header_layout.addWidget(title_label)
 
+        #  Кнопка
         btn_add = os.path.join(base_dir, "images/interface/add.png")
         # source: https://www.flaticon.com/ru/free-icon/add_3363871
-        self.add_member_overlay = AddMemberOverlay(self)
-
-        # Панель редактирования должностей
-        self.edit_positions_overlay = EditPositionsOverlay(self)
-
+        self.add_member_overlay = AddMemberOverlay(self, json_path=os.path.join(base_dir, "members.json"))
         self.add_member_btn = QPushButton()
         self.add_member_btn.setIcon(QIcon(btn_add))
         self.add_member_btn.setIconSize(QSize(30, 30))
@@ -89,8 +88,25 @@ class MainWindow(QWidget):
         header_layout.addWidget(self.add_member_btn)
 
         members_layout.addLayout(header_layout)
-        members_layout.addStretch()
+
+        # Область прокрутки
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("background-color: transparent; border: none;")
+
+        # Контейнер для блоков участников
+        self.members_container = QWidget()
+        self.members_container_layout = QVBoxLayout(self.members_container)
+        self.members_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.members_container_layout.setSpacing(8)
+        self.members_container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.scroll_area.setWidget(self.members_container)
+        members_layout.addWidget(self.scroll_area)
+
+        # Панель редактирования должностей
         self.members_panel.setLayout(members_layout)
+        self.refresh_members_list()
         content_layout.addWidget(self.members_panel)
 
         # Правая часть с задачами
@@ -136,7 +152,7 @@ class MainWindow(QWidget):
             """)
 
             vbox.addWidget(header)
-            vbox.addStretch()  # для будущих задач
+            vbox.addStretch()
             panel.setLayout(vbox)
             tasks_row.addWidget(panel)
             self.columns.append(panel)
@@ -148,14 +164,165 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
 
         # --- Панель настроек ---
+        self.edit_positions_overlay = EditPositionsOverlay(self)
         self.settings_panel = SettingsPanel(
             self,
             on_close=self.toggle_settings_panel,
             on_change_background=self.change_background,
-            on_edit_positions=self.edit_positions_overlay.show_overlay
+            on_edit_positions=EditPositionsOverlay(self).show_overlay
         )
         self.settings_panel.setGeometry(self.width(), 0, 300, self.height())
         self.panel_visible = False
+
+    def init_members_panel(self):
+        """Создаем панель участников с прокруткой"""
+        self.members_panel = QFrame()
+        self.members_panel.setFixedWidth(280)
+        self.members_panel.setStyleSheet("""
+            background-color: rgba(30, 30, 30, 230);
+            border: none;
+            color: white;
+        """)
+
+        members_layout = QVBoxLayout()
+        members_layout.setContentsMargins(0, 0, 0, 0)
+        members_layout.setSpacing(10)
+
+        # Заголовок
+        title_bar = QHBoxLayout()
+        title = QLabel("Участники")
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
+        title_bar.addWidget(title)
+        title_bar.addStretch()
+        members_layout.addLayout(title_bar)
+
+        # Область прокрутки
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("background-color: transparent; border: none;")
+
+        # Контейнер для блоков участников
+        self.members_container = QWidget()
+        self.members_container_layout = QVBoxLayout(self.members_container)
+        self.members_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.members_container_layout.setSpacing(8)
+
+        self.scroll_area.setWidget(self.members_container)
+        members_layout.addWidget(self.scroll_area)
+
+    def refresh_members_list(self):
+        # Очистить старые элементы
+        for i in reversed(range(self.members_container_layout.count())):
+            widget = self.members_container_layout.itemAt(i).widget()
+            if widget:
+                widget.deleteLater()
+
+        json_path = os.path.join(os.path.dirname(__file__), "members.json")
+        if not os.path.exists(json_path):
+            return
+
+        with open(json_path, "r", encoding="utf-8") as f:
+            members = json.load(f)
+
+        for member in members:
+            block = self.create_member_block(member)
+            self.members_container_layout.addWidget(block)
+
+        # self.members_container_layout.addStretch()
+
+    def create_member_block(self, member):
+        block = QFrame()
+        block.setStyleSheet("""
+            background-color: #2a2a2a;
+            border-radius: 10px;
+            padding: 8px;
+        """)
+        block.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QHBoxLayout(block)
+        layout.setContentsMargins(0, 0, 10, 0)
+
+        # --- Аватар ---
+        avatar_label = QLabel()
+        avatar_label.setFixedSize(60, 60)
+        if member.get("avatar") and os.path.exists(member["avatar"]):
+            pixmap = QPixmap(member["avatar"]).scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio,
+                                                      Qt.TransformationMode.SmoothTransformation)
+            avatar_label.setPixmap(pixmap)
+        else:
+            avatar_label.setStyleSheet("background-color: #444; border-radius: 25px;")
+        layout.addWidget(avatar_label)
+
+        # TODO: возможно стоит глубже рассмотреть фикс с длиной никнейма
+
+        # --- Имя + должность ---
+        info_container = QWidget()
+        info_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        info_layout = QVBoxLayout(info_container)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Имя
+        name_label = QLabel(member.get("name", "Без имени"))
+        name_label.setStyleSheet("font-weight: bold; color: white; font-size: 16px;")
+        name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        name_label.setMaximumWidth(97)
+        name_label.setWordWrap(True)
+        info_layout.addWidget(name_label)
+
+        # Должность
+        post = member.get("post")
+        if post:
+            post_color = self.get_post_color(post)
+            short_post = post[:3].upper()
+            post_label = QLabel(short_post)
+            post_label.setStyleSheet(f"color: {post_color}; font-size: 14px;")
+            info_layout.addWidget(post_label)
+        else:
+            info_layout.addWidget(QLabel(""))  # пустая строка
+        layout.addWidget(info_container)
+
+        # --- Число дел ---
+        tasks_count = member.get("tasks", 0)  # если нет - 0
+        tasks_label = QLabel(str(tasks_count))
+        tasks_label.setFixedSize(40, 30)
+        tasks_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tasks_label.setStyleSheet("""
+            background-color: #555;
+            color: white;
+            border-radius: 15px;
+            font-weight: bold;
+            font-size: 16px;
+        """)
+        layout.addStretch()
+        layout.addWidget(tasks_label)
+
+        # --- Статус ---
+        status_color = "#808080"  # серый
+        if member.get("status") == "Доступен":
+            status_color = "#00cc44"
+        elif member.get("status") == "Занят":
+            status_color = "#cc0000"
+
+        status_indicator = QLabel()
+        status_indicator.setFixedSize(16, 16)
+        status_indicator.setStyleSheet(f"""
+            background-color: {status_color};
+            border-radius: 8px;
+        """)
+        layout.addWidget(status_indicator)
+
+        return block
+
+    @staticmethod
+    def get_post_color(post_name):
+        positions_path = os.path.join(base_dir, "positions.json")
+        if os.path.exists(positions_path):
+            with open(positions_path, "r", encoding="utf-8") as f:
+                positions = json.load(f).get("positions", [])
+                for pos in positions:
+                    if pos["name"] == post_name:
+                        return pos.get("color", "#FFFFFF")
+        return "#FFFFFF"
 
     def toggle_settings_panel(self):
         """Анимация выезда панели"""
@@ -202,50 +369,184 @@ class MainWindow(QWidget):
 
 
 class AddMemberOverlay(QFrame):
-    def __init__(self, parent=None, on_close=None):
+    def __init__(self, parent, json_path, on_close=None):
         super().__init__(parent)
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
-        self.setVisible(False)  # скрыто по умолчанию
-
-        self.on_close = on_close  # callback для уведомления
-
-        # Основной лейаут (центрируем содержимое)
-        overlay_layout = QVBoxLayout(self)
-        overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.on_close = on_close
+        self.json_path = json_path
+        self.setObjectName("addMemberOverlay")
+        self.setStyleSheet("""
+            QFrame#addMemberOverlay {
+                background-color: rgba(0, 0, 0, 230);
+                border: none;
+            }
+        """)
+        self.setVisible(False)
 
         # Центральная панель
-        self.popup_panel = QFrame()
-        self.popup_panel.setFixedSize(800, 600)
-        self.popup_panel.setObjectName("addPeoplePanel")
-        self.popup_panel.setStyleSheet("""
+        self.panel = QFrame()
+        self.panel.setFixedSize(800, 600)
+        self.panel.setObjectName("addPeoplePanel")
+        self.panel.setStyleSheet("""
             QFrame#addPeoplePanel {
                 background-color: black;
                 border: 2px solid white;
                 border-radius: 15px;
             }
         """)
-        popup_layout = QVBoxLayout(self.popup_panel)
-        popup_layout.setContentsMargins(15, 15, 15, 15)
 
-        # Верхняя панель с крестиком
+        # Основной лейаут (центрируем содержимое)
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        panel_layout = QVBoxLayout(self.panel)
+        panel_layout.setContentsMargins(20, 20, 20, 20)
+        panel_layout.setSpacing(15)
+
+        # Заголовок + кнопка закрытия
         top_bar = QHBoxLayout()
+        title = QLabel("Добавить участника")
+        title.setStyleSheet("font-size: 22px; font-weight: bold;")
+        top_bar.addWidget(title)
         top_bar.addStretch()
         close_btn = QPushButton("✖")
         close_btn.setFixedSize(30, 30)
-        close_btn.setStyleSheet("border: none; font-size: 18px; color: white;")
         close_btn.clicked.connect(self.close_overlay)
         top_bar.addWidget(close_btn)
+        panel_layout.addLayout(top_bar)
 
-        popup_layout.addLayout(top_bar)
+        # --- Аватар ---
+        self.avatar_btn = QPushButton("Выбрать аватар")
+        self.avatar_btn.clicked.connect(self.select_avatar)
+        panel_layout.addWidget(self.avatar_btn)
 
-        # Заголовок
-        title = QLabel("Добавить участника")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        popup_layout.addWidget(title)
-        popup_layout.addStretch()
+        self.avatar_preview = QLabel("Нет аватара")
+        self.avatar_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.avatar_preview.setFixedSize(120, 120)
+        self.avatar_preview.setStyleSheet("border: 1px solid #ccc; background-color: #f5f5f5; color: white;")
+        panel_layout.addWidget(self.avatar_preview, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        overlay_layout.addWidget(self.popup_panel)
+        # --- Имя ---
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Никнейм / Имя (обязательно)")
+        panel_layout.addWidget(self.name_input)
+
+        # --- Должность ---
+        post_label = QLabel("Должность:")
+        post_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        panel_layout.addWidget(post_label)
+
+        self.post_combo = QComboBox()
+        self.post_combo.addItem("Нет")  # Должность необязательна
+        self.load_positions()  # загружаем должности из файла
+        panel_layout.addWidget(self.post_combo)
+
+        # --- Статус ---
+        status_label = QLabel("Статус:")
+        status_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        panel_layout.addWidget(status_label)
+
+        self.status_combo = QComboBox()
+        self.status_combo.addItems(["Доступен", "Занят", "Неизвестно"])
+        panel_layout.addWidget(self.status_combo)
+
+        # Ссылки
+        self.link1_input = QLineEdit()
+        self.link1_input.setPlaceholderText("Ссылка 1 (обязательно)")
+        panel_layout.addWidget(self.link1_input)
+
+        self.link2_input = QLineEdit()
+        self.link2_input.setPlaceholderText("Ссылка 2 (необязательно)")
+        panel_layout.addWidget(self.link2_input)
+
+        self.link3_input = QLineEdit()
+        self.link3_input.setPlaceholderText("Ссылка 3 (необязательно)")
+        panel_layout.addWidget(self.link3_input)
+
+        # Кнопки
+        btns_layout = QHBoxLayout()
+        save_btn = QPushButton("Сохранить")
+        save_btn.clicked.connect(self.save_member)
+        btns_layout.addWidget(save_btn)
+
+        cancel_btn = QPushButton("Отмена")
+        cancel_btn.clicked.connect(self.close_overlay)
+        btns_layout.addWidget(cancel_btn)
+        panel_layout.addLayout(btns_layout)
+
+        layout.addWidget(self.panel)
+
+        self.avatar_path = None  # путь к аватару
+        self.json_path = os.path.join(os.path.dirname(__file__), "members.json")
+
+    def load_positions(self):
+        json_path = os.path.join(os.path.dirname(__file__), "positions.json")
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f).get("positions", [])
+                for pos in data:
+                    self.post_combo.addItem(pos["name"])
+
+    def select_avatar(self):
+        file_name, _ = QFileDialog.getOpenFileName(self, "Выберите аватар", "", "Изображения (*.png *.jpg *.jpeg)")
+        if file_name:
+            self.avatar_path = file_name
+            pixmap = QPixmap(file_name).scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
+                                               Qt.TransformationMode.SmoothTransformation)
+            self.avatar_preview.setPixmap(pixmap)
+
+    def save_member(self):
+        name = self.name_input.text().strip()
+        link1 = self.link1_input.text().strip()
+
+        if not name or not link1:
+            QMessageBox.warning(self, "Ошибка", "Имя и Ссылка 1 обязательны!")
+            return
+
+        # Чтение текущего списка
+        members = []
+        if os.path.exists(self.json_path):
+            with open(self.json_path, "r", encoding="utf-8") as f:
+                members = json.load(f)  # теперь список, а не словарь
+
+        # Проверяем, есть ли участник с таким именем
+        if any(member.get("name") == name for member in members):
+            QMessageBox.warning(self, "Ошибка", f"Участник с именем '{name}' уже существует!")
+            return
+
+        # Добавляем нового
+
+        member_data = {
+            "name": name,
+            "post": self.post_combo.currentText() if self.post_combo.currentText() != "Нет" else None,
+            "status": self.status_combo.currentText(),
+            "avatar": self.avatar_path,
+            "links": [link1, self.link2_input.text().strip(), self.link3_input.text().strip()]
+        }
+        members.append(member_data)
+
+        # Сохраняем в JSON
+        with open(self.json_path, "w", encoding="utf-8") as f:
+            json.dump(members, f, ensure_ascii=False, indent=4)
+
+        QMessageBox.information(self, "Успех", "Участник добавлен!")
+
+        # Обновляем панель участников
+        if self.parent() and hasattr(self.parent(), "refresh_members_list"):
+            self.parent().refresh_members_list()
+
+        # Очищаем поля
+        self.clear_form()
+        self.close_overlay()
+
+    def clear_form(self):
+        self.avatar_path = None
+        self.avatar_preview.setText("Нет аватара")
+        self.avatar_preview.setPixmap(QPixmap())
+        self.name_input.clear()
+        self.status_combo.setCurrentIndex(0)
+        self.link1_input.clear()
+        self.link2_input.clear()
+        self.link3_input.clear()
 
     def show_overlay(self):
         """Показываем и растягиваем на размер родителя"""
