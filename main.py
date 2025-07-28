@@ -54,7 +54,7 @@ class MainWindow(QWidget):
 
         # --- Панель участников с кнопкой их добавления ---
         self.members_panel = QFrame()
-        self.members_panel.setFixedWidth(300)
+        self.members_panel.setFixedWidth(312)
         self.members_panel.setStyleSheet("""
             background-color: rgb(30, 30, 30);
             border: none;
@@ -111,7 +111,7 @@ class MainWindow(QWidget):
 
         # Правая часть с задачами
         tasks_container = QVBoxLayout()
-        tasks_container.setContentsMargins(15, 40, 15, 15)
+        tasks_container.setContentsMargins(5, 40, 5, 5)
 
         # Строка из 4 панелей
         tasks_row = QHBoxLayout()
@@ -137,7 +137,6 @@ class MainWindow(QWidget):
 
             vbox = QVBoxLayout()
             vbox.setContentsMargins(10, 10, 10, 10)
-            vbox.setSpacing(0)
 
             # Заголовок (белая область)
             header = QLabel(title)
@@ -261,11 +260,24 @@ class MainWindow(QWidget):
         info_layout = QVBoxLayout(info_container)
         info_layout.setContentsMargins(0, 0, 0, 0)
 
+        def insert_zero_width_spaces(text, max_chunk=10):
+            import re
+            # Разбиваем длинные слова длиннее max_chunk символов на части с \u200B
+            def repl(match):
+                word = match.group(0)
+                parts = [word[i:i + max_chunk] for i in range(0, len(word), max_chunk)]
+                return "\u200B".join(parts)
+
+            return re.sub(r'\S{' + str(max_chunk + 1) + ',}', repl, text)
+
         # Имя
         name_label = QLabel(member.get("name", "Без имени"))
         name_label.setStyleSheet("font-weight: bold; color: white; font-size: 16px;")
+        name_text = member.get("name", "Без имени")
+        name_text_wrapped = insert_zero_width_spaces(name_text, max_chunk=9)
+        name_label.setText(name_text_wrapped)
         name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        name_label.setMaximumWidth(97)
+        name_label.setMaximumWidth(110)
         name_label.setWordWrap(True)
         info_layout.addWidget(name_label)
 
