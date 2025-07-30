@@ -1,13 +1,14 @@
 import os
 import sys
 import json
+import uuid
 
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog,
     QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy
 )
-from PySide6.QtGui import QPixmap, QIcon, QColor
-from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve
+from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices
+from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -223,11 +224,24 @@ class MainWindow(QWidget):
         with open(json_path, "r", encoding="utf-8") as f:
             members = json.load(f)
 
+        members = self.sort_members_by_post(members)
+
         for member in members:
             block = self.create_member_block(member)
             self.members_container_layout.addWidget(block)
-
         # self.members_container_layout.addStretch()
+
+    @staticmethod
+    def sort_members_by_post(members):
+        post_priority = ["Руководитель", "Сценарист", "Художник", "Партнёр"]
+
+        def get_priority(member):
+            post = member.get("post", "")
+            if post in post_priority:
+                return post_priority.index(post)
+            return len(post_priority)  # если должность не в списке, отправляем в конец
+
+        return sorted(members, key=get_priority)
 
     def create_member_block(self, member):
         block = QFrame()
@@ -251,8 +265,6 @@ class MainWindow(QWidget):
         else:
             avatar_label.setStyleSheet("background-color: #444; border-radius: 25px;")
         layout.addWidget(avatar_label)
-
-        # TODO: возможно стоит глубже рассмотреть фикс с длиной никнейма
 
         # --- Имя + должность ---
         info_container = QWidget()
@@ -323,6 +335,8 @@ class MainWindow(QWidget):
         """)
         layout.addWidget(status_indicator)
 
+        block.mousePressEvent = lambda event, m=member: self.show_member_info(m)
+
         return block
 
     @staticmethod
@@ -378,6 +392,98 @@ class MainWindow(QWidget):
 
         # Перемещаем кнопку в правый верхний угол
         self.settings_btn.move(self.width() - self.settings_btn.width() - 20, 5)
+
+    def show_member_info(self, member):
+        dialog = MemberInfoDialog(self, member, on_edit_callback=self.open_edit_member)
+        dialog.exec()
+
+    def open_edit_member(self, member):
+        # Используем AddMemberOverlay, но в режиме редактирования
+        self.add_member_overlay.load_member(member)
+        self.add_member_overlay.show_overlay()
+
+
+class MemberInfoDialog(QDialog):
+    def __init__(self, parent, member, on_edit_callback=None):
+        super().__init__(parent)
+        self.setWindowTitle("Информация об участнике")
+        self.setModal(True)
+        self.setFixedSize(300, 400)
+        self.member = member
+        self.on_edit_callback = on_edit_callback
+
+        layout = QVBoxLayout(self)
+
+        # --- Аватар ---
+        avatar_label = QLabel()
+        avatar_label.setFixedSize(100, 100)
+        if member.get("avatar") and os.path.exists(member["avatar"]):
+            pixmap = QPixmap(member["avatar"]).scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
+                                                      Qt.TransformationMode.SmoothTransformation)
+            avatar_label.setPixmap(pixmap)
+        else:
+            avatar_label.setStyleSheet("background-color: #444; border-radius: 50px;")
+        avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(avatar_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # --- Имя ---
+        name_label = QLabel(member.get("name", "Без имени"))
+        name_label.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(name_label)
+
+        # --- Должность ---
+        post = member.get("post", "Отсутствует")
+        post_color = "#888888"
+        if post != "Отсутствует":
+            post_color = parent.get_post_color(post)
+        post_label = QLabel(post)
+        post_label.setStyleSheet(f"color: {post_color}; font-size: 18px;")
+        post_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(post_label)
+
+        # --- Статус ---
+        status = member.get("status", "Неизвестно")
+        status_label = QLabel(f"Статус: {status}")
+        status_label.setStyleSheet("color: white; font-size: 16px;")
+        layout.addWidget(status_label)
+
+        # --- Кол-во дел ---
+        tasks_label = QLabel(f"Количество задач: {member.get('tasks', 0)}")
+        tasks_label.setStyleSheet("color: white; font-size: 16px;")
+        layout.addWidget(tasks_label)
+
+        # --- Ссылки ---
+        links_label = QLabel("Ссылки:")
+        links_label.setStyleSheet("color: white; font-size: 16px;")
+        layout.addWidget(links_label)
+        for link in member.get("links", []):
+            if link:
+                link_btn = QPushButton(link)
+                link_btn.setStyleSheet("color: #00aaff; text-align: left;")
+                link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                link_btn.clicked.connect(lambda _, l=link: QDesktopServices.openUrl(QUrl(l)))
+                layout.addWidget(link_btn)
+
+        layout.addStretch()
+
+        # --- Кнопки ---
+        btn_layout = QHBoxLayout()
+        edit_btn = QPushButton()
+        edit_icon = QIcon(os.path.join(base_dir, "images/interface/edit.png"))
+        edit_btn.setIcon(edit_icon)
+        edit_btn.setFixedSize(30, 30)
+        edit_btn.setFlat(True)
+        btn_layout.addWidget(edit_btn)
+        layout.addLayout(btn_layout)
+
+        edit_btn.clicked.connect(self.edit_member)
+
+
+    def edit_member(self):
+        if self.on_edit_callback:
+            self.on_edit_callback(self.member)
+        self.close()
 
 
 class AddMemberOverlay(QFrame):
@@ -520,27 +626,41 @@ class AddMemberOverlay(QFrame):
             with open(self.json_path, "r", encoding="utf-8") as f:
                 members = json.load(f)  # теперь список, а не словарь
 
-        # Проверяем, есть ли участник с таким именем
-        if any(member.get("name") == name for member in members):
-            QMessageBox.warning(self, "Ошибка", f"Участник с именем '{name}' уже существует!")
-            return
+        if hasattr(self, "editing_member_id") and self.editing_member_id:  # Редактируем существующего пользователя
+            for m in members:
+                if m["id"] == self.editing_member_id:
+                    m.update({
+                        "name": name,
+                        "post": self.post_combo.currentText() if self.post_combo.currentText() != "Нет" else None,
+                        "status": self.status_combo.currentText(),
+                        "avatar": self.avatar_path,
+                        "links": [link1, self.link2_input.text().strip(), self.link3_input.text().strip()]
+                    })
+                    break
+            QMessageBox.information(self, "Успех", f"Данные участника '{name}' изменены.")
+        else:  # Добавляем нового человека
+            # Проверяем, есть ли участник с таким именем
+            if any(member.get("name") == name for member in members):
+                QMessageBox.warning(self, "Ошибка", f"Участник с именем '{name}' уже существует!")
+                return
 
-        # Добавляем нового
+            unique_id = str(uuid.uuid4())
+            member_data = {
+                "id": unique_id,
+                "name": name,
+                "post": self.post_combo.currentText() if self.post_combo.currentText() != "Нет" else None,
+                "status": self.status_combo.currentText(),
+                "tasks": 0,
+                "avatar": self.avatar_path,
+                "links": [link1, self.link2_input.text().strip(), self.link3_input.text().strip()]
+            }
+            members.append(member_data)
 
-        member_data = {
-            "name": name,
-            "post": self.post_combo.currentText() if self.post_combo.currentText() != "Нет" else None,
-            "status": self.status_combo.currentText(),
-            "avatar": self.avatar_path,
-            "links": [link1, self.link2_input.text().strip(), self.link3_input.text().strip()]
-        }
-        members.append(member_data)
+            QMessageBox.information(self, "Успех", "Участник добавлен!")
 
         # Сохраняем в JSON
         with open(self.json_path, "w", encoding="utf-8") as f:
             json.dump(members, f, ensure_ascii=False, indent=4)
-
-        QMessageBox.information(self, "Успех", "Участник добавлен!")
 
         # Обновляем панель участников
         if self.parent() and hasattr(self.parent(), "refresh_members_list"):
@@ -549,6 +669,20 @@ class AddMemberOverlay(QFrame):
         # Очищаем поля
         self.clear_form()
         self.close_overlay()
+
+    def load_member(self, member):
+        self.clear_form()
+        self.editing_member_id = member.get("id")
+        self.name_input.setText(member.get("name", ""))
+        self.status_combo.setCurrentText(member.get("status", "Доступен"))
+        self.post_combo.setCurrentText(member.get("post", "Нет"))
+        self.avatar_path = member.get("avatar")
+        if self.avatar_path and os.path.exists(self.avatar_path):
+            self.avatar_preview.setPixmap(QPixmap(self.avatar_path).scaled(80, 80, Qt.KeepAspectRatio))
+        links = member.get("links", [])
+        self.link1_input.setText(links[0] if len(links) > 0 else "")
+        self.link2_input.setText(links[1] if len(links) > 1 else "")
+        self.link3_input.setText(links[2] if len(links) > 2 else "")
 
     def clear_form(self):
         self.avatar_path = None
