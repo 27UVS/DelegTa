@@ -18,6 +18,7 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle("DelegTa")
         self.setWindowIcon(QIcon(os.path.join(base_dir, "images/interface/icon.png")))
+        # icon author: https://vk.com/forgottenandunknownman
         self.json_path = os.path.join(os.path.dirname(__file__), "members.json")
 
         # --- Загружаем сохранённый фон ---
