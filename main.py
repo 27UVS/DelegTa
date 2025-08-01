@@ -4,11 +4,11 @@ import json
 import uuid
 
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog,
-    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit,
+    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox
 )
 from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices
-from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl
+from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -140,20 +140,41 @@ class MainWindow(QWidget):
             vbox = QVBoxLayout()
             vbox.setContentsMargins(10, 10, 10, 10)
 
-            # Заголовок (белая область)
-            header = QLabel(title)
-            header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            header.setStyleSheet("""
-                background-color: white;
+            header_layout = QHBoxLayout()
+            header_label = QLabel(title)
+            header_label.setStyleSheet("""
                 color: #333;
                 font-size: 18px;
                 font-weight: bold;
-                border-radius: 10px;  /* скругление только у заголовка */
-                padding: 8px;
             """)
+            header_layout.addWidget(header_label)
+            header_layout.addStretch()
 
-            vbox.addWidget(header)
+            if title == "Черновик":
+                add_task_btn = QPushButton()
+                add_task_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/add.png")))
+                add_task_btn.setIconSize(QSize(32, 32))
+                add_task_btn.setFixedSize(30, 30)
+                add_task_btn.setStyleSheet("border: none;")
+                add_task_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                add_task_btn.setStyleSheet("""
+                        background-color: #4CAF50;
+                        color: white;
+                        font-size: 18px;
+                        font-weight: bold;
+                        border: none;
+                        border-radius: 14px;
+                    """)
+                add_task_btn.clicked.connect(self.show_add_task_overlay)
+                header_layout.addWidget(add_task_btn)
+
+            header_wrapper = QFrame()
+            header_wrapper.setStyleSheet("background-color: white; border-radius: 10px; padding: 5px;")
+            header_wrapper.setLayout(header_layout)
+
+            vbox.addWidget(header_wrapper)
             vbox.addStretch()
+
             panel.setLayout(vbox)
             tasks_row.addWidget(panel)
             self.columns.append(panel)
@@ -340,6 +361,9 @@ class MainWindow(QWidget):
 
         return block
 
+    def show_add_task_overlay(self):
+        self.task_overlay = AddTaskOverlay(self, base_dir)
+
     @staticmethod
     def get_post_color(post_name):
         positions_path = os.path.join(base_dir, "positions.json")
@@ -402,6 +426,291 @@ class MainWindow(QWidget):
         # Используем AddMemberOverlay, но в режиме редактирования
         self.add_member_overlay.load_member(member)
         self.add_member_overlay.show_overlay()
+
+
+class AddTaskOverlay(QFrame):
+    def __init__(self, parent=None, base_dir=""):
+        super().__init__(parent)
+        self.base_dir = base_dir
+        self.setGeometry(0, 0, parent.width(), parent.height())
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
+        self.setVisible(True)
+        self.raise_()
+
+        # Основной контейнер
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Панель
+        panel = QFrame()
+        panel.setFixedSize(1000, 625)
+        panel.setStyleSheet("""
+            background-color: #2a2a2a;
+            border-radius: 20px;
+            color: white;
+        """)
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setSpacing(15)
+
+        # Верхняя панель с кнопкой закрытия
+        top_bar = QHBoxLayout()
+        top_bar.addStretch()
+        close_btn = QPushButton("✖")
+        close_btn.setFixedSize(32, 32)
+        close_btn.setStyleSheet("""
+            background-color: transparent;
+            color: white;
+            font-size: 18px;
+            border: none;
+        """)
+        close_btn.clicked.connect(self.close_overlay)
+        top_bar.addWidget(close_btn)
+        panel_layout.addLayout(top_bar)
+
+        # Заголовок
+        title = QLabel("Создать задание")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 5px;")
+        panel_layout.addWidget(title)
+
+        # Контент: 2 колонки
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(20)
+
+        # Левая колонка
+        left_col = QVBoxLayout()
+        left_col.setSpacing(15)
+
+        # Название
+        name_label = QLabel("Название задания")
+        name_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.task_name_input = QLineEdit()
+        self.task_name_input.setPlaceholderText("Введите название...")
+        self.task_name_input.setStyleSheet("""
+            padding: 10px; font-size: 16px; border-radius: 10px;
+            border: 1px solid #555; background-color: #3a3a3a; color: white;
+        """)
+        left_col.addWidget(name_label)
+        left_col.addWidget(self.task_name_input)
+
+        # Ответственный
+        responsible_label = QLabel("Ответственный")
+        responsible_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.task_responsible_combo = QComboBox()
+        self.task_responsible_combo.setStyleSheet("""
+            padding: 10px; font-size: 16px; border-radius: 10px;
+            border: 1px solid #555; background-color: #3a3a3a; color: white;
+        """)
+        self.load_members_into_combo()
+        left_col.addWidget(responsible_label)
+        left_col.addWidget(self.task_responsible_combo)
+
+        # Время
+        datetime_style = """
+            QDateTimeEdit {
+                padding: 8px;
+                font-size: 16px;
+                border-radius: 10px;
+                border: 1px solid #555;
+                background-color: #3a3a3a;
+                color: white;
+            }
+            QDateTimeEdit:disabled {
+                background-color: #555;
+                color: #aaa;
+            }
+            QCalendarWidget {
+                background-color: #2a2a2a;
+                color: white;
+                border: 1px solid #555;
+            }
+            QCalendarWidget QToolButton {
+                color: white;
+                font-size: 16px;
+            }
+            QCalendarWidget QMenu {
+                background-color: #3a3a3a;
+                color: white;
+            }
+        """
+
+        # Время создания
+        date_start_label = QLabel("Дата создания")
+        date_start_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.created_at_edit = QDateTimeEdit(QDateTime.currentDateTime())
+        self.created_at_edit.setDisplayFormat("dd.MM.yyyy HH:mm")
+        self.created_at_edit.setCalendarPopup(True)
+        self.created_at_edit.setStyleSheet(datetime_style)
+        left_col.addWidget(date_start_label)
+        left_col.addWidget(self.created_at_edit)
+
+        # Дедлайн
+        date_end_label = QLabel("Дедлайн")
+        date_end_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.deadline_edit = QDateTimeEdit(QDateTime.currentDateTime().addDays(1))
+        self.deadline_edit.setDisplayFormat("dd.MM.yyyy HH:mm")
+        self.deadline_edit.setCalendarPopup(True)
+        self.deadline_edit.setStyleSheet(datetime_style)
+        left_col.addWidget(date_end_label)
+        left_col.addWidget(self.deadline_edit)
+
+        # Чекбоксы
+        self.permanent_checkbox = QCheckBox("Постоянное задание")
+        self.no_deadline_checkbox = QCheckBox("Задание без дедлайна")
+        for cb in [self.permanent_checkbox, self.no_deadline_checkbox]:
+            cb.setStyleSheet("""
+                QCheckBox { font-size: 14px; color: white; }
+                QCheckBox::indicator {
+                    width: 18px; height: 18px;
+                    border-radius: 3px; border: 2px solid white;
+                    background-color: transparent;
+                }
+                QCheckBox::indicator:checked { background-color: white; }
+            """)
+        left_col.addWidget(self.permanent_checkbox)
+        left_col.addWidget(self.no_deadline_checkbox)
+
+        # Логика чекбоксов
+        self.permanent_checkbox.stateChanged.connect(self.toggle_permanent_task)
+        self.no_deadline_checkbox.stateChanged.connect(self.toggle_no_deadline_task)
+
+        # Правая колонка
+        right_col = QVBoxLayout()
+        desc_label = QLabel("Описание задания")
+        desc_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.task_description = QTextEdit()
+        self.task_description.setPlaceholderText("Введите описание...")
+        self.task_description.setStyleSheet("""
+            padding: 10px; font-size: 16px; border-radius: 10px;
+            border: 1px solid #555; background-color: #3a3a3a; color: white;
+        """)
+        right_col.addWidget(desc_label)
+        right_col.addWidget(self.task_description)
+
+        # Объединяем колонки
+        content_layout.addLayout(left_col, 1)
+        content_layout.addLayout(right_col, 2)
+        panel_layout.addLayout(content_layout)
+
+        # Кнопка сохранить
+        create_btn = QPushButton("Создать задание")
+        create_btn.setStyleSheet("""
+            background-color: #4CAF50; color: white; font-size: 18px;
+            font-weight: bold; border: none; border-radius: 12px;
+            padding: 10px; margin-top: 5px;
+        """)
+        create_btn.clicked.connect(self.save_task)
+        panel_layout.addWidget(create_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(panel)
+
+    def load_members_into_combo(self):
+        members_path = os.path.join(self.base_dir, "members.json")
+        self.task_responsible_combo.clear()
+        if os.path.exists(members_path):
+            with open(members_path, "r", encoding="utf-8") as f:
+                members = json.load(f)
+                for m in members:
+                    self.task_responsible_combo.addItem(m["name"])
+
+    def toggle_permanent_task(self, state):
+        if state == Qt.CheckState.Checked:
+            # Блокируем оба поля
+            self.created_at_edit.setEnabled(False)
+            self.deadline_edit.setEnabled(False)
+            # Снимаем другой чекбокс
+            self.no_deadline_checkbox.blockSignals(True)
+            self.no_deadline_checkbox.setChecked(False)
+            self.no_deadline_checkbox.blockSignals(False)
+        else:
+            # Разблокируем оба
+            self.created_at_edit.setEnabled(True)
+            self.deadline_edit.setEnabled(True)
+
+    def toggle_no_deadline_task(self, state):
+        if state == Qt.CheckState.Checked:
+            # Блокируем только дедлайн
+            self.deadline_edit.setEnabled(False)
+            # Снимаем другой чекбокс
+            self.permanent_checkbox.blockSignals(True)
+            self.permanent_checkbox.setChecked(False)
+            self.permanent_checkbox.blockSignals(False)
+            # При этом created_at остается активным
+        else:
+            # Разблокируем дедлайн, если не включен permanent
+            if not self.permanent_checkbox.isChecked():
+                self.deadline_edit.setEnabled(True)
+
+    def save_task(self):
+        task_name = self.task_name_input.text().strip()
+
+        # 1. Проверка на пустое имя
+        if not task_name:
+            QMessageBox.warning(self, "Ошибка", "Имя задания обязательно!")
+            return
+
+        # 2. Проверка на оба чекбокса
+        if self.permanent_checkbox.isChecked() and self.no_deadline_checkbox.isChecked():
+            QMessageBox.warning(self, "Ошибка",
+                                "Нельзя одновременно выбрать 'Постоянное задание' и 'Задание без дедлайна'.")
+            return
+
+        # 3. Проверка на дедлайн >= дата создания (только если поля активны)
+        if not self.permanent_checkbox.isChecked() and not self.no_deadline_checkbox.isChecked():
+            created_dt = self.created_at_edit.dateTime()
+            deadline_dt = self.deadline_edit.dateTime()
+            if deadline_dt < created_dt:
+                QMessageBox.warning(self, "Ошибка", "Дедлайн не может быть раньше даты создания.")
+                return
+
+        # 4. Генерация ID
+        def generate_unique_id():
+            all_task_files = [
+                os.path.join(base_dir, "tasks/draft_tasks.json"),
+                os.path.join(base_dir, "tasks/progress_tasks.json"),
+                os.path.join(base_dir, "tasks/finished_tasks.json"),
+                os.path.join(base_dir, "tasks/delayed_tasks.json")
+            ]
+
+            while True:
+                new_id = str(uuid.uuid4())
+                if not any(task.get("id") == new_id for file_path in all_task_files if os.path.exists(file_path)
+                           for task in json.load(open(file_path, "r", encoding="utf-8"))):
+                    return new_id
+        new_task_id = generate_unique_id()
+
+        # 5. Загружаем существующие задания
+        tasks_path = os.path.join(base_dir, "tasks/draft_tasks.json")
+        tasks = []
+        if os.path.exists(tasks_path):
+            with open(tasks_path, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+
+        # 6. Формируем данные задания
+        task_data = {
+            "id": new_task_id,
+            "name": task_name,
+            "responsible": self.task_responsible_combo.currentText(),
+            "description": self.task_description.toPlainText().strip(),
+            "created_at": None if self.permanent_checkbox.isChecked() else self.created_at_edit.dateTime().toString(
+                "dd.MM.yyyy HH:mm"),
+            "deadline": None if self.no_deadline_checkbox.isChecked() or self.permanent_checkbox.isChecked()
+            else self.deadline_edit.dateTime().toString("dd.MM.yyyy HH:mm"),
+            "is_permanent": self.permanent_checkbox.isChecked(),
+            "no_deadline": self.no_deadline_checkbox.isChecked(),
+        }
+
+        # 7. Сохраняем
+        tasks.append(task_data)
+        with open(tasks_path, "w", encoding="utf-8") as f:
+            json.dump(tasks, f, ensure_ascii=False, indent=4)
+
+        QMessageBox.information(self, "Успех", "Задание создано!")
+        self.close_overlay()
+
+    def close_overlay(self):
+        self.setVisible(False)
+        self.deleteLater()
 
 
 class MemberInfoDialog(QDialog):
@@ -479,7 +788,6 @@ class MemberInfoDialog(QDialog):
         layout.addLayout(btn_layout)
 
         edit_btn.clicked.connect(self.edit_member)
-
 
     def edit_member(self):
         if self.on_edit_callback:
