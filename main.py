@@ -7,8 +7,8 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit,
     QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox
 )
-from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices
-from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime
+from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag
+from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -22,7 +22,7 @@ class MainWindow(QWidget):
         self.json_path = os.path.join(os.path.dirname(__file__), "members.json")
 
         # --- Загружаем сохранённый фон ---
-        self.settings = QSettings("MyCompany", "DelegTaApp")
+        self.settings = QSettings("27UVS", "DelegTaApp")
         saved_path = self.settings.value("background_path", os.path.join(base_dir, "background.jpg"))
         if not isinstance(saved_path, str):
             saved_path = str(saved_path)
@@ -108,6 +108,7 @@ class MainWindow(QWidget):
 
         # Панель редактирования должностей
         self.members_panel.setLayout(members_layout)
+        self.update_members_tasks_count()
         self.refresh_members_list()
         content_layout.addWidget(self.members_panel)
 
@@ -121,6 +122,8 @@ class MainWindow(QWidget):
 
         # Панели задач
         self.columns = []
+        self.scroll_areas = []
+
         colors = {
             "Черновик": "rgba(62, 95, 138, 220)",
             "В процессе": "rgba(229, 81, 55, 220)",
@@ -130,54 +133,67 @@ class MainWindow(QWidget):
         titles = ["Черновик", "В процессе", "Завершено", "Отложено"]
 
         for title in titles:
-            panel = QFrame()
-            panel.setStyleSheet(f"""
+            outer_frame = QFrame()
+            outer_frame.setStyleSheet(f"""
                 background-color: {colors[title]};
                 border-radius: 20px;
                 border: 1px solid #ccc;
             """)
+            outer_layout = QVBoxLayout(outer_frame)
+            outer_layout.setContentsMargins(10, 10, 10, 10)
 
-            vbox = QVBoxLayout()
-            vbox.setContentsMargins(10, 10, 10, 10)
-
+            # Заголовок
             header_layout = QHBoxLayout()
             header_label = QLabel(title)
-            header_label.setStyleSheet("""
-                color: #333;
-                font-size: 18px;
-                font-weight: bold;
-            """)
+            header_label.setStyleSheet("color: #333; font-size: 18px; font-weight: bold;")
             header_layout.addWidget(header_label)
             header_layout.addStretch()
 
+            # Кнопка добавления задачи только для "Черновик"
             if title == "Черновик":
                 add_task_btn = QPushButton()
                 add_task_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/add.png")))
                 add_task_btn.setIconSize(QSize(32, 32))
                 add_task_btn.setFixedSize(30, 30)
-                add_task_btn.setStyleSheet("border: none;")
-                add_task_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 add_task_btn.setStyleSheet("""
-                        background-color: #4CAF50;
-                        color: white;
-                        font-size: 18px;
-                        font-weight: bold;
-                        border: none;
-                        border-radius: 14px;
-                    """)
+                    background-color: #4CAF50;
+                    color: white;
+                    font-size: 18px;
+                    font-weight: bold;
+                    border: none;
+                    border-radius: 14px;
+                """)
                 add_task_btn.clicked.connect(self.show_add_task_overlay)
                 header_layout.addWidget(add_task_btn)
 
-            header_wrapper = QFrame()
-            header_wrapper.setStyleSheet("background-color: white; border-radius: 10px; padding: 5px;")
-            header_wrapper.setLayout(header_layout)
+            header_frame = QFrame()
+            header_frame.setLayout(header_layout)
+            header_frame.setStyleSheet("background-color: white; border-radius: 10px;")
+            outer_layout.addWidget(header_frame)
 
-            vbox.addWidget(header_wrapper)
-            vbox.addStretch()
+            # QScrollArea для задач
+            scroll_area = QScrollArea()
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setStyleSheet("background: transparent; border: none;")
 
-            panel.setLayout(vbox)
-            tasks_row.addWidget(panel)
-            self.columns.append(panel)
+            # Внутренний TaskPanel (поддерживает drag & drop)
+            task_panel = TaskPanel(status=title, main_window=self)
+            container_widget = QWidget()
+            container_layout = QVBoxLayout(container_widget)
+            container_layout.setContentsMargins(5, 5, 5, 5)
+            container_layout.setSpacing(10)
+            container_layout.addWidget(task_panel)
+            scroll_area.setWidget(container_widget)
+
+            outer_layout.addWidget(scroll_area)
+            tasks_row.addWidget(outer_frame)
+
+            # Сохраняем
+            self.columns.append(task_panel)
+            self.scroll_areas.append(scroll_area)
+
+        # Загружаем задачи
+        self.load_tasks_into_panels()
 
         tasks_container.addLayout(tasks_row)
         content_layout.addLayout(tasks_container)
@@ -362,7 +378,104 @@ class MainWindow(QWidget):
         return block
 
     def show_add_task_overlay(self):
-        self.task_overlay = AddTaskOverlay(self, base_dir)
+        self.task_overlay = AddTaskOverlay(parent=self, base_dir=base_dir)
+
+    def load_tasks_into_panels(self):
+        files_map = {
+            "Черновик": os.path.join(base_dir, "tasks/draft_tasks.json"),
+            "В процессе": os.path.join(base_dir, "tasks/progress_tasks.json"),
+            "Завершено": os.path.join(base_dir, "tasks/finished_tasks.json"),
+            "Отложено": os.path.join(base_dir, "tasks/delayed_tasks.json"),
+        }
+
+        for panel in self.columns:
+            layout = panel.layout
+            # Удаляем старые карточки (кроме Stretch)
+            for i in reversed(range(layout.count() - 1)):
+                item = layout.itemAt(i)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            # Загружаем задачи для конкретного статуса
+            file_path = files_map[panel.status]
+            if not os.path.exists(file_path):
+                continue
+
+            with open(file_path, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+
+            for task in reversed(tasks):  # в обратном порядке
+                panel.add_task(task)
+
+    def add_task_card(self, layout, task):
+        card = QFrame()
+        card.setStyleSheet("""
+            background-color: white;
+            border-radius: 10px;
+        """)
+        card.setFixedWidth(220)
+        card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
+
+        vbox = QVBoxLayout(card)
+        vbox.setContentsMargins(8, 8, 8, 8)
+        vbox.setSpacing(5)
+
+        # 1. Название задачи
+        name_label = QLabel(task.get("name", "Без названия"))
+        name_label.setWordWrap(True)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
+        vbox.addWidget(name_label)
+
+        # 2. Ответственный
+        responsible_id = task.get("responsible", "")
+        responsible_name = self.get_member_name_by_id(responsible_id)
+        resp_label = QLabel(f"Ответственный: {responsible_name}")
+        resp_label.setWordWrap(True)
+        resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        resp_label.setStyleSheet("font-size: 14px; color: #333;")
+        vbox.addWidget(resp_label)
+
+        # 3. Время (зависит от условий)
+        time_label = QLabel()
+        if task.get("is_permanent"):
+            time_label.setText("П")
+            time_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
+        elif task.get("no_deadline"):
+            created_date = QDateTime.fromString(task.get("created_at"), "dd.MM.yyyy HH:mm")
+            if created_date.isValid():
+                days = created_date.daysTo(QDateTime.currentDateTime())
+                time_label.setText(f"{days} д.")
+                time_label.setStyleSheet("font-size: 14px; color: gray;")
+            else:
+                time_label.setText("—")
+        else:
+            deadline = QDateTime.fromString(task.get("deadline"), "dd.MM.yyyy HH:mm")
+            now = QDateTime.currentDateTime()
+            if deadline.isValid():
+                days_diff = now.daysTo(deadline)
+                if days_diff >= 0:
+                    time_label.setText(f"ост. {days_diff} д.")
+                    time_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
+                else:
+                    time_label.setText(f"проср. {abs(days_diff)} д.")
+                    time_label.setStyleSheet("font-size: 14px; color: red; font-weight: bold;")
+            else:
+                time_label.setText("—")
+        vbox.addWidget(time_label)
+
+        layout.insertWidget(layout.count() - 1, card)  # вставляем перед stretch
+
+    @staticmethod
+    def get_member_name_by_id(member_id):
+        members_path = os.path.join(base_dir, "members.json")
+        if os.path.exists(members_path):
+            with open(members_path, "r", encoding="utf-8") as f:
+                members = json.load(f)
+                for m in members:
+                    if m["id"] == member_id:
+                        return m.get("name", "Неизвестно")
+        return "Неизвестно"
 
     @staticmethod
     def get_post_color(post_name):
@@ -374,6 +487,77 @@ class MainWindow(QWidget):
                     if pos["name"] == post_name:
                         return pos.get("color", "#FFFFFF")
         return "#FFFFFF"
+
+    @staticmethod
+    def update_members_tasks_count():
+        members_path = os.path.join(base_dir, "members.json")
+        if not os.path.exists(members_path):
+            return
+
+        # Загружаем участников
+        with open(members_path, "r", encoding="utf-8") as f:
+            members = json.load(f)
+
+        # Загружаем задачи из progress и delayed
+        task_files = [
+            os.path.join(base_dir, "tasks/progress_tasks.json"),
+            os.path.join(base_dir, "tasks/delayed_tasks.json")
+        ]
+
+        task_counts = {}
+        for file_path in task_files:
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    tasks = json.load(f)
+                    for task in tasks:
+                        responsible_id = task.get("responsible")
+                        if responsible_id:
+                            task_counts[responsible_id] = task_counts.get(responsible_id, 0) + 1
+
+        # Обновляем количество задач у участников
+        for member in members:
+            member_id = member.get("id")
+            member["tasks"] = task_counts.get(member_id, 0)
+
+        # Сохраняем обновленный список
+        with open(members_path, "w", encoding="utf-8") as f:
+            json.dump(members, f, ensure_ascii=False, indent=4)
+
+    def move_task_to_panel(self, task_data, new_status):
+        # Определяем, из какого JSON удалить, в какой добавить
+        files_map = {
+            "Черновик": "draft_tasks.json",
+            "В процессе": "progress_tasks.json",
+            "Завершено": "finished_tasks.json",
+            "Отложено": "delayed_tasks.json"
+        }
+
+        # Удаляем из всех файлов
+        for fname in files_map.values():
+            path = os.path.join(base_dir, "tasks", fname)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    tasks = json.load(f)
+                tasks = [t for t in tasks if t.get("id") != task_data["id"]]
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(tasks, f, ensure_ascii=False, indent=4)
+
+        # Добавляем в новый файл
+        new_file = os.path.join(base_dir, "tasks", files_map[new_status])
+        if os.path.exists(new_file):
+            with open(new_file, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+        else:
+            tasks = []
+        tasks.append(task_data)
+        with open(new_file, "w", encoding="utf-8") as f:
+            json.dump(tasks, f, ensure_ascii=False, indent=4)
+
+        self.load_tasks_into_panels()
+
+        self.update_members_tasks_count()
+        if hasattr(self, "refresh_members_list"):
+            self.refresh_members_list()
 
     def toggle_settings_panel(self):
         """Анимация выезда панели"""
@@ -424,13 +608,131 @@ class MainWindow(QWidget):
 
     def open_edit_member(self, member):
         # Используем AddMemberOverlay, но в режиме редактирования
+        self.add_member_overlay.edit_mode = True
+        self.add_member_overlay.editing_member_id = member["id"]
         self.add_member_overlay.load_member(member)
         self.add_member_overlay.show_overlay()
 
 
+class TaskCard(QFrame):
+    def __init__(self, task_data, main_window=None):
+        super().__init__()
+        self.task_data = task_data
+        self.main_window = main_window
+        self.setStyleSheet("""
+            background-color: white;
+            border-radius: 10px;
+            padding: 5px;
+        """)
+        self.setFixedWidth(170)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
+
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(8, 8, 8, 8)
+
+        # --- Название задания ---
+        name_label = QLabel(task_data.get("name", "Без названия"))
+        name_label.setStyleSheet("font-size: 18px; font-weight: bold; color: black;")
+        name_label.setWordWrap(True)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        vbox.addWidget(name_label)
+
+        # --- Ответственный за задание ---
+        responsible_id = task_data.get("responsible", "")
+        resp_name = main_window.get_member_name_by_id(responsible_id)
+        resp_label = QLabel(f"Ответственный: {resp_name}")
+        resp_label.setStyleSheet("font-size: 16px; color: #333;;")
+        resp_label.setWordWrap(True)
+        resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        vbox.addWidget(resp_label)
+
+        # --- Время задания ---
+        time_label = QLabel()
+        if self.task_data.get("is_permanent"):
+            time_label.setText("П")
+            time_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
+        elif self.task_data.get("no_deadline"):
+            created_date = QDateTime.fromString(self.task_data.get("created_at"), "dd.MM.yyyy HH:mm")
+            if created_date.isValid():
+                days = created_date.daysTo(QDateTime.currentDateTime())
+                time_label.setText(f"{days} д.")
+                time_label.setStyleSheet("font-size: 14px; color: gray;")
+            else:
+                time_label.setText("—")
+        else:
+            deadline = QDateTime.fromString(self.task_data.get("deadline"), "dd.MM.yyyy HH:mm")
+            now = QDateTime.currentDateTime()
+            if deadline.isValid():
+                days_diff = now.daysTo(deadline)
+                if days_diff >= 0:
+                    time_label.setText(f"ост. {days_diff} д.")
+                    time_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
+                else:
+                    time_label.setText(f"проср. {abs(days_diff)} д.")
+                    time_label.setStyleSheet("font-size: 14px; color: red; font-weight: bold;")
+            else:
+                time_label.setText("—")
+        vbox.addWidget(time_label)
+
+    def calculate_time_text(self, task):
+        if task.get("is_permanent"):
+            return "П"
+        elif task.get("no_deadline"):
+            created = QDateTime.fromString(task.get("created_at"), "dd.MM.yyyy HH:mm")
+            return f"{created.daysTo(QDateTime.currentDateTime())} д." if created.isValid() else "—"
+        else:
+            deadline = QDateTime.fromString(task.get("deadline"), "dd.MM.yyyy HH:mm")
+            if deadline.isValid():
+                diff = QDateTime.currentDateTime().daysTo(deadline)
+                return f"ост. {diff} д." if diff >= 0 else f"проср. {abs(diff)} д."
+            return "—"
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setText(json.dumps(self.task_data))
+            drag.setMimeData(mime)
+            drag.exec(Qt.DropAction.MoveAction)
+
+
+class TaskPanel(QFrame):
+    def __init__(self, status, main_window=None):
+        super().__init__()
+        self.status = status
+        self.main_window = main_window
+        self.setAcceptDrops(True)
+        self.setStyleSheet("""
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 15px;
+        """)
+
+        self.layout = QVBoxLayout(self)
+        self.layout.addStretch()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasText():
+            task_data = json.loads(event.mimeData().text())
+            self.add_task(task_data)
+            self.main_window.move_task_to_panel(task_data, self.status)
+            event.acceptProposedAction()
+
+    def add_task(self, task_data):
+        card = TaskCard(task_data, main_window=self.main_window)
+        self.layout.insertWidget(self.layout.count() - 1, card)
+
+
 class AddTaskOverlay(QFrame):
-    def __init__(self, parent=None, base_dir=""):
+    def __init__(self, parent=None, base_dir=None):
         super().__init__(parent)
+        self.parent = parent
         self.base_dir = base_dir
         self.setGeometry(0, 0, parent.width(), parent.height())
         self.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
@@ -605,13 +907,18 @@ class AddTaskOverlay(QFrame):
         layout.addWidget(panel)
 
     def load_members_into_combo(self):
-        members_path = os.path.join(self.base_dir, "members.json")
+        json_path = os.path.join(base_dir, "members.json")
         self.task_responsible_combo.clear()
-        if os.path.exists(members_path):
-            with open(members_path, "r", encoding="utf-8") as f:
+        self.members_map = {}  # {name: id}
+
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
                 members = json.load(f)
-                for m in members:
-                    self.task_responsible_combo.addItem(m["name"])
+                for member in members:
+                    name = member["name"]
+                    member_id = member.get("id")
+                    self.members_map[name] = member_id
+                    self.task_responsible_combo.addItem(name)
 
     def toggle_permanent_task(self, state):
         if state == Qt.CheckState.Checked:
@@ -687,10 +994,12 @@ class AddTaskOverlay(QFrame):
                 tasks = json.load(f)
 
         # 6. Формируем данные задания
+        responsible_name = self.task_responsible_combo.currentText()
+        responsible_id = self.members_map.get(responsible_name)
         task_data = {
             "id": new_task_id,
             "name": task_name,
-            "responsible": self.task_responsible_combo.currentText(),
+            "responsible": responsible_id,
             "description": self.task_description.toPlainText().strip(),
             "created_at": None if self.permanent_checkbox.isChecked() else self.created_at_edit.dateTime().toString(
                 "dd.MM.yyyy HH:mm"),
@@ -704,6 +1013,10 @@ class AddTaskOverlay(QFrame):
         tasks.append(task_data)
         with open(tasks_path, "w", encoding="utf-8") as f:
             json.dump(tasks, f, ensure_ascii=False, indent=4)
+
+        self.parent.update_members_tasks_count()
+        if self.parent and hasattr(self.parent, "load_tasks_into_panels"):
+            self.parent.load_tasks_into_panels()
 
         QMessageBox.information(self, "Успех", "Задание создано!")
         self.close_overlay()
@@ -800,6 +1113,8 @@ class AddMemberOverlay(QFrame):
         super().__init__(parent)
         self.on_close = on_close
         self.json_path = json_path
+        self.edit_mode = False
+        self.editing_member_id = None
         self.setObjectName("addMemberOverlay")
         self.setStyleSheet("""
             QFrame#addMemberOverlay {
@@ -876,7 +1191,7 @@ class AddMemberOverlay(QFrame):
         self.status_combo.addItems(["Доступен", "Занят", "Неизвестно"])
         panel_layout.addWidget(self.status_combo)
 
-        # Ссылки
+        # --- Ссылки ---
         self.link1_input = QLineEdit()
         self.link1_input.setPlaceholderText("Ссылка 1 (обязательно)")
         panel_layout.addWidget(self.link1_input)
@@ -889,17 +1204,26 @@ class AddMemberOverlay(QFrame):
         self.link3_input.setPlaceholderText("Ссылка 3 (необязательно)")
         panel_layout.addWidget(self.link3_input)
 
-        # Кнопки
-        btns_layout = QHBoxLayout()
+        # --- Кнопки ---
+        self.btns_layout = QHBoxLayout()
+
+        # Кнопка сохранения
         save_btn = QPushButton("Сохранить")
         save_btn.clicked.connect(self.save_member)
-        btns_layout.addWidget(save_btn)
+        self.btns_layout.addWidget(save_btn)
 
-        cancel_btn = QPushButton("Отмена")
-        cancel_btn.clicked.connect(self.close_overlay)
-        btns_layout.addWidget(cancel_btn)
-        panel_layout.addLayout(btns_layout)
+        # Кнопка удаления
+        self.delete_btn = QPushButton("Удалить")
+        self.delete_btn.setStyleSheet("background-color: red; color: white; font-weight: bold;")
+        self.delete_btn.clicked.connect(self.delete_member)
+        self.btns_layout.addWidget(self.delete_btn)
 
+        # Кнопка отмены
+        self.cancel_btn = QPushButton("Отмена")
+        self.cancel_btn.clicked.connect(self.close_overlay)
+        self.btns_layout.addWidget(self.cancel_btn)
+
+        panel_layout.addLayout(self.btns_layout)
         layout.addWidget(self.panel)
 
         self.avatar_path = None  # путь к аватару
@@ -973,21 +1297,53 @@ class AddMemberOverlay(QFrame):
 
         # Обновляем панель участников
         if self.parent() and hasattr(self.parent(), "refresh_members_list"):
+            self.parent.update_members_tasks_count()
             self.parent().refresh_members_list()
 
         # Очищаем поля
         self.clear_form()
         self.close_overlay()
 
+    def delete_member(self):
+        if not self.editing_member_id:
+            QMessageBox.warning(self, "Ошибка", "Невозможно удалить: ID не найден.")
+            return
+
+        # Загружаем участников
+        members = []
+        if os.path.exists(self.json_path):
+            with open(self.json_path, "r", encoding="utf-8") as f:
+                members = json.load(f)
+
+        # Ищем участника
+        for member in members:
+            if member["id"] == self.editing_member_id:
+                if member.get("tasks", 0) > 0:
+                    QMessageBox.warning(self, "Ошибка", "Нельзя удалить участника с активными задачами!")
+                    return
+                members.remove(member)
+                break
+
+        # Сохраняем изменения
+        with open(self.json_path, "w", encoding="utf-8") as f:
+            json.dump(members, f, ensure_ascii=False, indent=4)
+
+        QMessageBox.information(self, "Успех", "Участник удалён.")
+
+        # Обновляем интерфейс
+        if self.parent() and hasattr(self.parent(), "refresh_members_list"):
+            self.parent().refresh_members_list()
+
+        self.close_overlay()
+
     def load_member(self, member):
-        self.clear_form()
         self.editing_member_id = member.get("id")
         self.name_input.setText(member.get("name", ""))
         self.status_combo.setCurrentText(member.get("status", "Доступен"))
         self.post_combo.setCurrentText(member.get("post", "Нет"))
         self.avatar_path = member.get("avatar")
         if self.avatar_path and os.path.exists(self.avatar_path):
-            self.avatar_preview.setPixmap(QPixmap(self.avatar_path).scaled(80, 80, Qt.KeepAspectRatio))
+            self.avatar_preview.setPixmap(QPixmap(self.avatar_path).scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio))
         links = member.get("links", [])
         self.link1_input.setText(links[0] if len(links) > 0 else "")
         self.link2_input.setText(links[1] if len(links) > 1 else "")
@@ -1004,7 +1360,17 @@ class AddMemberOverlay(QFrame):
         self.link3_input.clear()
 
     def show_overlay(self):
-        """Показываем и растягиваем на размер родителя"""
+        """Выполняет две функции:
+            Настраивает показ кнопок Удалить и Отмена в карточке создания/редактирования участника.
+            Показывает и растягивает на размер родителя
+        """
+        if self.edit_mode:
+            self.cancel_btn.hide()
+            self.delete_btn.show()
+        else:
+            self.delete_btn.hide()
+            self.cancel_btn.show()
+
         if self.parent():
             self.setGeometry(0, 0, self.parent().width(), self.parent().height())
         self.setVisible(True)
@@ -1012,6 +1378,9 @@ class AddMemberOverlay(QFrame):
 
     def close_overlay(self):
         """Закрыть и вызвать callback, если есть"""
+        self.edit_mode = False
+        self.editing_member_id = None
+        self.clear_form()
         self.setVisible(False)
         if self.on_close:
             self.on_close()
