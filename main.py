@@ -179,7 +179,7 @@ class MainWindow(QWidget):
             scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
             # Внутренний TaskPanel (поддерживает drag & drop)
-            task_panel = TaskPanel(status=title, main_window=self)
+            task_panel = TaskPanel(status=title, main_window=self, on_edit_callback=self.open_edit_task)
             container_widget = QWidget()
             container_layout = QVBoxLayout(container_widget)
             container_layout.setContentsMargins(5, 5, 5, 5)
@@ -616,13 +616,18 @@ class MainWindow(QWidget):
         self.add_member_overlay.load_member(member)
         self.add_member_overlay.show_overlay()
 
+    def open_edit_task(self, task_data, status):
+        self.add_task_overlay = AddTaskOverlay(parent=self, main_window=self, base_dir=base_dir, task_data=task_data, status=status)
+        self.add_task_overlay.show()
+
 
 class TaskCard(QFrame):
-    def __init__(self, task_data, main_window=None, panel_title=None):
+    def __init__(self, task_data, main_window=None, panel_title=None, on_edit_callback=None):
         super().__init__()
         self.task_data = task_data
         self.main_window = main_window
         self.panel_title = panel_title
+        self.on_edit_callback = on_edit_callback
         self.setStyleSheet("""
             background-color: white;
             border-radius: 10px;
@@ -703,15 +708,16 @@ class TaskCard(QFrame):
             drag.exec(Qt.DropAction.MoveAction)
 
     def mouseDoubleClickEvent(self, event):
-        dialog = TaskInfoDialog(self.task_data, parent=self.main_window)
+        dialog = TaskInfoDialog(self.task_data, parent=self.main_window, on_edit_callback=self.on_edit_callback, status=self.panel_title)
         dialog.exec()
 
 
 class TaskPanel(QFrame):
-    def __init__(self, status, main_window=None):
+    def __init__(self, status, main_window=None, on_edit_callback=None):
         super().__init__()
         self.status = status
         self.main_window = main_window
+        self.on_edit_callback = on_edit_callback
         self.setAcceptDrops(True)
         self.setStyleSheet("""
             background-color: rgba(255,255,255,0.1);
@@ -736,23 +742,27 @@ class TaskPanel(QFrame):
             event.acceptProposedAction()
 
     def add_task(self, task_data):
-        card = TaskCard(task_data, main_window=self.main_window, panel_title=self.status)
+        card = TaskCard(task_data, main_window=self.main_window, panel_title=self.status, on_edit_callback=self.on_edit_callback)
         self.layout.insertWidget(self.layout.count() - 1, card)
 
 
 class TaskInfoDialog(QDialog):
-    def __init__(self, task_data, parent=None):
+    def __init__(self, task_data, parent=None, on_edit_callback=None, status=None):
         super().__init__(parent)
         self.task_data = task_data
+        self.on_edit_callback = on_edit_callback
+        self.status = status
         self.setWindowTitle(task_data.get("name", "Задача"))
         self.setModal(True)
         self.setFixedSize(500, 300)
 
-        main_layout = QHBoxLayout(self)
+        layout = QHBoxLayout(self)
 
-        # Левая часть (инфо об ответственном + время)
-        left_frame = QFrame()
-        left_layout = QVBoxLayout(left_frame)
+        # Основной блок
+        main_layout = QHBoxLayout()
+
+        # Левая часть: ответственный + даты
+        left_layout = QVBoxLayout()
 
         # Ответственный (аватар + имя)
         responsible_id = task_data.get("responsible")
@@ -801,6 +811,7 @@ class TaskInfoDialog(QDialog):
         left_layout.addWidget(created_label)
         left_layout.addWidget(deadline_label)
         left_layout.addStretch()
+        main_layout.addLayout(left_layout)
 
         # Правая часть (описание)
         right_frame = QFrame()
@@ -812,24 +823,49 @@ class TaskInfoDialog(QDialog):
         description.setReadOnly(True)
         description.setText(task_data.get("description", "Нет описания"))
         description.setStyleSheet("background-color: #222; color: white; font-size: 14px;")
-
         right_layout.addWidget(desc_label)
         right_layout.addWidget(description)
+        main_layout.addWidget(right_frame)
 
-        # Добавляем в общий layout
-        main_layout.addWidget(left_frame, 1)
-        main_layout.addWidget(right_frame, 2)
+        layout.addLayout(main_layout)
+
+        # --- Кнопка редактирования ---
+        edit_btn = QPushButton()
+        edit_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/edit.png")))
+        edit_btn.setIconSize(QSize(20, 20))
+        edit_btn.setFixedSize(30, 30)
+        edit_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        edit_btn.clicked.connect(self.edit_task)
+        layout.addWidget(edit_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def edit_task(self):
+        if self.on_edit_callback:
+            self.on_edit_callback(self.task_data, self.status)
+        self.close()
 
 
 class AddTaskOverlay(QFrame):
-    def __init__(self, parent=None, main_window=None, base_dir=None):
+    def __init__(self, parent=None, main_window=None, base_dir=None, task_data=None, status=None):
         super().__init__(parent)
         self.main_window = main_window
         self.base_dir = base_dir
+        self.task_data = task_data
+        self.edit_mode = False
         self.setGeometry(0, 0, main_window.width(), main_window.height())
         self.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
         self.setVisible(True)
         self.raise_()
+
+        files_map = {
+            "Черновик": "draft_tasks.json",
+            "В процессе": "progress_tasks.json",
+            "Завершено": "finished_tasks.json",
+            "Отложено": "delayed_tasks.json"
+        }
+        self.file = files_map[status] if status else None
+
+        if self.task_data:
+            self.edit_mode = True
 
         # Основной контейнер
         layout = QVBoxLayout(self)
@@ -986,15 +1022,62 @@ class AddTaskOverlay(QFrame):
         content_layout.addLayout(right_col, 2)
         panel_layout.addLayout(content_layout)
 
-        # Кнопка сохранить
-        create_btn = QPushButton("Создать задание")
-        create_btn.setStyleSheet("""
-            background-color: #4CAF50; color: white; font-size: 18px;
-            font-weight: bold; border: none; border-radius: 12px;
-            padding: 10px; margin-top: 5px;
-        """)
-        create_btn.clicked.connect(self.save_task)
-        panel_layout.addWidget(create_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        if self.edit_mode and self.task_data:
+            self.task_name_input.setText(self.task_data.get("name", ""))
+            self.task_description.setPlainText(self.task_data.get("description", ""))
+
+            # Ответственный
+            responsible_id = self.task_data.get("responsible")
+            if responsible_id:
+                idx = self.task_responsible_combo.findData(responsible_id)
+                if idx >= 0:
+                    self.task_responsible_combo.setCurrentIndex(idx)
+
+            # Чекбоксы
+            self.permanent_checkbox.setChecked(self.task_data.get("is_permanent", False))
+            self.no_deadline_checkbox.setChecked(self.task_data.get("no_deadline", False))
+
+            # Даты
+            if self.task_data.get("created_at"):
+                self.created_at_edit.setDateTime(QDateTime.fromString(self.task_data["created_at"], "dd.MM.yyyy HH:mm"))
+            if self.task_data.get("deadline"):
+                self.deadline_edit.setDateTime(QDateTime.fromString(self.task_data["deadline"], "dd.MM.yyyy HH:mm"))
+
+        if not self.edit_mode:
+            create_btn = QPushButton("Создать задание")
+            create_btn.setStyleSheet("""
+                background-color: #4CAF50; color: white; font-size: 18px;
+                font-weight: bold; border: none; border-radius: 12px;
+                padding: 10px; margin-top: 5px;
+            """)
+            create_btn.clicked.connect(self.create_new_task)
+            panel_layout.addWidget(create_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        else:
+            # Горизонтальный контейнер для кнопок
+            btn_layout = QHBoxLayout()
+            btn_layout.setSpacing(15)
+            btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            save_btn = QPushButton("Сохранить изменения")
+            save_btn.setStyleSheet("""
+                background-color: #4385AB; color: white; font-size: 18px;
+                font-weight: bold; border: none; border-radius: 12px;
+                padding: 10px;
+            """)
+            save_btn.clicked.connect(self.save_task)
+            btn_layout.addWidget(save_btn)
+
+            delete_btn = QPushButton("Удалить задание")
+            delete_btn.setStyleSheet("""
+                background-color: #E62525; color: white; font-size: 18px;
+                font-weight: bold; border: none; border-radius: 12px;
+                padding: 10px;
+            """)
+            delete_btn.clicked.connect(self.delete_task)
+            btn_layout.addWidget(delete_btn)
+
+            # Добавляем оба рядом
+            panel_layout.addLayout(btn_layout)
 
         layout.addWidget(panel)
 
@@ -1010,7 +1093,7 @@ class AddTaskOverlay(QFrame):
                     name = member["name"]
                     member_id = member.get("id")
                     self.members_map[name] = member_id
-                    self.task_responsible_combo.addItem(name)
+                    self.task_responsible_combo.addItem(name, member_id)
 
     def toggle_permanent_task(self, state):
         if state == Qt.CheckState.Checked:
@@ -1040,7 +1123,7 @@ class AddTaskOverlay(QFrame):
             if not self.permanent_checkbox.isChecked():
                 self.deadline_edit.setEnabled(True)
 
-    def save_task(self):
+    def create_new_task(self):
         task_name = self.task_name_input.text().strip()
 
         # 1. Проверка на пустое имя
@@ -1112,6 +1195,53 @@ class AddTaskOverlay(QFrame):
 
         QMessageBox.information(self, "Успех", "Задание создано!")
         self.close_overlay()
+
+    def save_task(self):
+        # Обновляем данные
+        self.task_data["name"] = self.task_name_input.text().strip()
+        self.task_data["description"] = self.task_description.toPlainText().strip()
+        self.task_data["responsible"] = self.task_responsible_combo.currentData()
+        self.task_data["is_permanent"] = self.permanent_checkbox.isChecked()
+        self.task_data["no_deadline"] = self.no_deadline_checkbox.isChecked()
+        self.task_data["created_at"] = None if self.permanent_checkbox.isChecked() else \
+            self.created_at_edit.dateTime().toString("dd.MM.yyyy HH:mm")
+        self.task_data[
+            "deadline"] = None if self.no_deadline_checkbox.isChecked() or self.permanent_checkbox.isChecked() \
+            else self.deadline_edit.dateTime().toString("dd.MM.yyyy HH:mm")
+
+        # Сохраняем изменения в файле
+        file_path = os.path.join(self.base_dir, f"tasks/{self.file}")
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+            for idx, t in enumerate(tasks):
+                if t["id"] == self.task_data["id"]:
+                    tasks[idx] = self.task_data
+                    break
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(tasks, f, ensure_ascii=False, indent=4)
+
+        self.main_window.update_members_tasks_count()
+        self.main_window.load_tasks_into_panels()
+        QMessageBox.information(self, "Успех", "Изменения сохранены!")
+        self.close_overlay()
+
+    def delete_task(self):
+        reply = QMessageBox.question(self, "Подтверждение", "Удалить это задание?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            file_path = os.path.join(self.base_dir, f"tasks/{self.file}")
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    tasks = json.load(f)
+                tasks = [t for t in tasks if t["id"] != self.task_data["id"]]
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(tasks, f, ensure_ascii=False, indent=4)
+
+            self.main_window.update_members_tasks_count()
+            self.main_window.load_tasks_into_panels()
+            QMessageBox.information(self, "Удалено", "Задача удалена!")
+            self.close_overlay()
 
     def close_overlay(self):
         self.setVisible(False)
