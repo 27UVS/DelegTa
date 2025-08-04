@@ -75,7 +75,7 @@ class MainWindow(QWidget):
         #  Кнопка
         btn_add = os.path.join(base_dir, "images/interface/add.png")
         # source: https://www.flaticon.com/ru/free-icon/add_3363871
-        self.add_member_overlay = AddMemberOverlay(self, json_path=os.path.join(base_dir, "members.json"))
+        self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir, "members.json"))
         self.add_member_btn = QPushButton()
         self.add_member_btn.setIcon(QIcon(btn_add))
         self.add_member_btn.setIconSize(QSize(30, 30))
@@ -380,7 +380,7 @@ class MainWindow(QWidget):
         return block
 
     def show_add_task_overlay(self):
-        self.task_overlay = AddTaskOverlay(main_window=self, base_dir=base_dir)
+        self.task_overlay = AddTaskOverlay(parent=self, main_window=self, base_dir=base_dir)
 
     def load_tasks_into_panels(self):
         files_map = {
@@ -822,8 +822,8 @@ class TaskInfoDialog(QDialog):
 
 
 class AddTaskOverlay(QFrame):
-    def __init__(self, main_window=None, base_dir=None):
-        super().__init__()
+    def __init__(self, parent=None, main_window=None, base_dir=None):
+        super().__init__(parent)
         self.main_window = main_window
         self.base_dir = base_dir
         self.setGeometry(0, 0, main_window.width(), main_window.height())
@@ -1202,8 +1202,8 @@ class MemberInfoDialog(QDialog):
 
 
 class AddMemberOverlay(QFrame):
-    def __init__(self, main_window, json_path, on_close=None):
-        super().__init__()
+    def __init__(self, main_window, json_path, on_close=None, parent=None):
+        super().__init__(parent)
         self.main_window = main_window
         self.on_close = on_close
         self.json_path = json_path
@@ -1564,7 +1564,7 @@ class SettingsPanel(QFrame):
 
 
 class EditPositionsOverlay(QFrame):
-    # TODO: Баг - если создать новую должность, она появится только после перезапуска программы
+    # Баг - если создать новую должность, она появится только после перезапуска программы
     def __init__(self, parent=None, json_path="positions.json"):
         super().__init__(parent)
         self.json_path = json_path
