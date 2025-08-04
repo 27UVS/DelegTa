@@ -49,7 +49,7 @@ class MainWindow(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Основная область с панелями
+        # --- Основная область с панелями ---
         content_layout = QHBoxLayout()
         content_layout.setContentsMargins(10, 10, 10, 10)
         content_layout.setSpacing(0)
@@ -66,13 +66,13 @@ class MainWindow(QWidget):
         members_layout = QVBoxLayout()
         members_layout.setContentsMargins(15, 15, 15, 15)
 
-        #  Заголовок
+        # --- Заголовок панели участников ---
         header_layout = QHBoxLayout()
         title_label = QLabel("Участники")
         title_label.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
         header_layout.addWidget(title_label)
 
-        #  Кнопка
+        # Кнопка добавления участника
         btn_add = os.path.join(base_dir, "images/interface/add.png")
         # source: https://www.flaticon.com/ru/free-icon/add_3363871
         self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir, "members.json"))
@@ -116,7 +116,7 @@ class MainWindow(QWidget):
         tasks_container = QVBoxLayout()
         tasks_container.setContentsMargins(5, 40, 5, 5)
 
-        # Строка из 4 панелей
+        # --- 4 панели ---
         tasks_row = QHBoxLayout()
         tasks_row.setSpacing(15)
 
@@ -204,12 +204,12 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
 
         # --- Панель настроек ---
-        self.edit_positions_overlay = EditPositionsOverlay(self)
+        self.edit_positions_overlay = EditPositionsOverlay(parent=self, main_window=self)
         self.settings_panel = SettingsPanel(
             self,
             on_close=self.toggle_settings_panel,
             on_change_background=self.change_background,
-            on_edit_positions=EditPositionsOverlay(self).show_overlay
+            on_edit_positions=EditPositionsOverlay(parent=self, main_window=self).show_overlay
         )
         self.settings_panel.setGeometry(self.width(), 0, 300, self.height())
         self.panel_visible = False
@@ -708,7 +708,7 @@ class TaskCard(QFrame):
             drag.exec(Qt.DropAction.MoveAction)
 
     def mouseDoubleClickEvent(self, event):
-        dialog = TaskInfoDialog(self.task_data, parent=self.main_window, on_edit_callback=self.on_edit_callback, status=self.panel_title)
+        dialog = TaskInfoDialog(task_data=self.task_data, parent=self.main_window, on_edit_callback=self.on_edit_callback, status=self.panel_title)
         dialog.exec()
 
 
@@ -1678,7 +1678,7 @@ class SettingsPanel(QFrame):
         # Кнопка редактирования должностей
         edit_positions_btn = QPushButton("Редактировать должности")
         edit_positions_btn.setStyleSheet("background-color: #444; color: white; padding: 10px;")
-        edit_positions_btn.clicked.connect(on_edit_positions)  # ✅ теперь чисто и безопасно
+        edit_positions_btn.clicked.connect(on_edit_positions)
         layout.addWidget(edit_positions_btn)
 
         # Кнопка смены фона
@@ -1695,8 +1695,9 @@ class SettingsPanel(QFrame):
 
 class EditPositionsOverlay(QFrame):
     # Баг - если создать новую должность, она появится только после перезапуска программы
-    def __init__(self, parent=None, json_path="positions.json"):
+    def __init__(self, parent=None, main_window=None, json_path="positions.json"):
         super().__init__(parent)
+        self.main_window = main_window
         self.json_path = json_path
         self.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
         self.setVisible(False)
@@ -1836,6 +1837,8 @@ class EditPositionsOverlay(QFrame):
             self.save_positions()
             self.refresh_list()
             self.position_input.clear()
+            if self.main_window and hasattr(self.main_window, "refresh_members"):
+                self.main_window.refresh_members_list()
         else:
             QMessageBox.warning(self, "Ошибка", "Такая должность уже есть или поле пустое!")
 
@@ -1868,6 +1871,8 @@ class EditPositionsOverlay(QFrame):
             self.positions[index]["name"] = new_text
             self.save_positions()
             self.refresh_list()
+            if self.main_window and hasattr(self.main_window, "refresh_members"):
+                self.main_window.refresh_members_list()
         else:
             QMessageBox.warning(self, "Ошибка", "Название пустое или уже существует!")
 
@@ -1878,11 +1883,32 @@ class EditPositionsOverlay(QFrame):
             self.positions[index]["color"] = color.name()
             self.save_positions()
             self.refresh_list()
+            if self.main_window and hasattr(self.main_window, "refresh_members"):
+                self.main_window.refresh_members_list()
 
     def delete_position(self, index):
+        position_name = self.positions[index]["name"]
+        print(position_name)
+
+        # Путь к members.json (или где хранятся участники)
+        members_path = os.path.join(base_dir, "members.json")
+        if os.path.exists(members_path):
+            with open(members_path, "r", encoding="utf-8") as f:
+                members = json.load(f)
+
+            # Проверяем, есть ли участник с этой должностью
+            in_use = any(m.get("post") == position_name for m in members)
+            print(in_use)
+            if in_use:
+                QMessageBox.warning(self, "Ошибка", f"Невозможно удалить должность '{position_name}', "
+                                                    f"так как она назначена участникам.")
+                return  # Выходим, не удаляем
+        # Если должность не используется, удаляем
         del self.positions[index]
         self.save_positions()
         self.refresh_list()
+        if self.main_window and hasattr(self.main_window, "refresh_members"):
+            self.main_window.refresh_members_list()
 
     def show_overlay(self):
         self.setGeometry(0, 0, self.parent().width(), self.parent().height())
