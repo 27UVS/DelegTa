@@ -491,6 +491,9 @@ class MainWindow(QWidget):
                         return pos.get("color", "#FFFFFF")
         return "#FFFFFF"
 
+    def update_view_posts(self):
+        pass
+
     @staticmethod
     def update_members_tasks_count():
         members_path = os.path.join(base_dir, "members.json")
@@ -1189,8 +1192,9 @@ class AddTaskOverlay(QFrame):
         with open(tasks_path, "w", encoding="utf-8") as f:
             json.dump(tasks, f, ensure_ascii=False, indent=4)
 
-        self.main_window.update_members_tasks_count()
         if self.main_window and hasattr(self.main_window, "load_tasks_into_panels"):
+            self.main_window.update_members_tasks_count()
+            self.main_window.refresh_members_list()
             self.main_window.load_tasks_into_panels()
 
         QMessageBox.information(self, "Успех", "Задание создано!")
@@ -1239,6 +1243,7 @@ class AddTaskOverlay(QFrame):
                     json.dump(tasks, f, ensure_ascii=False, indent=4)
 
             self.main_window.update_members_tasks_count()
+            self.main_window.refresh_members_list()
             self.main_window.load_tasks_into_panels()
             QMessageBox.information(self, "Удалено", "Задача удалена!")
             self.close_overlay()
@@ -1858,6 +1863,7 @@ class EditPositionsOverlay(QFrame):
                 if layout is not None:
                     layout.insertWidget(0, editor)
                 editor.returnPressed.connect(lambda: self.save_edited_position(index, editor))
+                self.main_window.refresh_members_list()
                 editor.setFocus()
                 break
 
