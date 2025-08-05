@@ -19,7 +19,7 @@ class MainWindow(QWidget):
         self.setWindowTitle("DelegTa")
         self.setWindowIcon(QIcon(os.path.join(base_dir, "images/interface/icon.png")))
         # icon author: https://vk.com/forgottenandunknownman
-        self.json_path = os.path.join(os.path.dirname(__file__), "members.json")
+        self.json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
 
         # --- Загружаем сохранённый фон ---
         self.settings = QSettings("27UVS", "DelegTaApp")
@@ -75,7 +75,8 @@ class MainWindow(QWidget):
         # Кнопка добавления участника
         btn_add = os.path.join(base_dir, "images/interface/add.png")
         # source: https://www.flaticon.com/ru/free-icon/add_3363871
-        self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir, "members.json"))
+        self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir,
+                                                                                             "db/members.json"))
         self.add_member_btn = QPushButton()
         self.add_member_btn.setIcon(QIcon(btn_add))
         self.add_member_btn.setIconSize(QSize(30, 30))
@@ -257,7 +258,7 @@ class MainWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
-        json_path = os.path.join(os.path.dirname(__file__), "members.json")
+        json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
         if not os.path.exists(json_path):
             return
 
@@ -471,7 +472,7 @@ class MainWindow(QWidget):
 
     @staticmethod
     def get_member_by_id(member_id):
-        members_path = os.path.join(base_dir, "members.json")
+        members_path = os.path.join(base_dir, "db/members.json")
         if os.path.exists(members_path):
             with open(members_path, "r", encoding="utf-8") as f:
                 members = json.load(f)
@@ -482,7 +483,7 @@ class MainWindow(QWidget):
 
     @staticmethod
     def get_post_color(post_name):
-        positions_path = os.path.join(base_dir, "positions.json")
+        positions_path = os.path.join(base_dir, "db/positions.json")
         if os.path.exists(positions_path):
             with open(positions_path, "r", encoding="utf-8") as f:
                 positions = json.load(f).get("positions", [])
@@ -491,12 +492,24 @@ class MainWindow(QWidget):
                         return pos.get("color", "#FFFFFF")
         return "#FFFFFF"
 
-    def update_view_posts(self):
-        pass
+    def refresh_positions_everywhere(self):
+        """
+        Обновляет:
+        1. Цвет должностей в блоках участников.
+        2. ComboBox должностей в окнах добавления/редактирования участника.
+        """
+        # 1. Обновляем список участников (цвет должностей пересчитается через get_post_color)
+        self.refresh_members_list()
+
+        # 2. Обновляем ComboBox в открытых окнах AddMemberOverlay или EditMemberOverlay
+        # Проверяем все дочерние окна MainWindow
+        for child in self.findChildren(QWidget):
+            if hasattr(child, "load_positions"):  # Окно поддерживает загрузку должностей
+                child.load_positions()
 
     @staticmethod
     def update_members_tasks_count():
-        members_path = os.path.join(base_dir, "members.json")
+        members_path = os.path.join(base_dir, "db/members.json")
         if not os.path.exists(members_path):
             return
 
@@ -1085,7 +1098,7 @@ class AddTaskOverlay(QFrame):
         layout.addWidget(panel)
 
     def load_members_into_combo(self):
-        json_path = os.path.join(base_dir, "members.json")
+        json_path = os.path.join(base_dir, "db/members.json")
         self.task_responsible_combo.clear()
         self.members_map = {}  # {name: id}
 
@@ -1456,10 +1469,11 @@ class AddMemberOverlay(QFrame):
         layout.addWidget(self.panel)
 
         self.avatar_path = None  # путь к аватару
-        self.json_path = os.path.join(os.path.dirname(__file__), "members.json")
+        self.json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
 
     def load_positions(self):
-        json_path = os.path.join(os.path.dirname(__file__), "positions.json")
+        self.post_combo.clear()  # Очистка списка перед обновлением
+        json_path = os.path.join(os.path.dirname(__file__), "db/positions.json")
         if os.path.exists(json_path):
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f).get("positions", [])
@@ -1700,7 +1714,7 @@ class SettingsPanel(QFrame):
 
 class EditPositionsOverlay(QFrame):
     # Баг - если создать новую должность, она появится только после перезапуска программы
-    def __init__(self, parent=None, main_window=None, json_path="positions.json"):
+    def __init__(self, parent=None, main_window=None, json_path="db/positions.json"):
         super().__init__(parent)
         self.main_window = main_window
         self.json_path = json_path
@@ -1842,8 +1856,8 @@ class EditPositionsOverlay(QFrame):
             self.save_positions()
             self.refresh_list()
             self.position_input.clear()
-            if self.main_window and hasattr(self.main_window, "refresh_members"):
-                self.main_window.refresh_members_list()
+            if self.main_window and hasattr(self.main_window, "refresh_positions_everywhere"):
+                self.main_window.refresh_positions_everywhere()
         else:
             QMessageBox.warning(self, "Ошибка", "Такая должность уже есть или поле пустое!")
 
@@ -1874,11 +1888,29 @@ class EditPositionsOverlay(QFrame):
         # Проверка: либо имя не пустое и не дублирует чужие
         if new_text and (new_text == current_text or all(
                 pos["name"] != new_text for i, pos in enumerate(self.positions) if i != index)):
+
+            # 1. Обновляем имя должности в positions.json
             self.positions[index]["name"] = new_text
             self.save_positions()
+
+            # 2. Обновляем должность у участников в members.json
+            members_path = os.path.join(base_dir, "db/members.json")
+            if os.path.exists(members_path):
+                with open(members_path, "r", encoding="utf-8") as f:
+                    members = json.load(f)
+
+                # Заменяем должность у всех участников, у кого была старая
+                for member in members:
+                    if member.get("post") == current_text:
+                        member["post"] = new_text
+
+                with open(members_path, "w", encoding="utf-8") as f:
+                    json.dump(members, f, ensure_ascii=False, indent=4)
+
+            # 3. Обновляем интерфейс и ComboBox
             self.refresh_list()
-            if self.main_window and hasattr(self.main_window, "refresh_members"):
-                self.main_window.refresh_members_list()
+            if self.main_window and hasattr(self.main_window, "refresh_positions_everywhere"):
+                self.main_window.refresh_positions_everywhere()
         else:
             QMessageBox.warning(self, "Ошибка", "Название пустое или уже существует!")
 
@@ -1889,15 +1921,15 @@ class EditPositionsOverlay(QFrame):
             self.positions[index]["color"] = color.name()
             self.save_positions()
             self.refresh_list()
-            if self.main_window and hasattr(self.main_window, "refresh_members"):
-                self.main_window.refresh_members_list()
+            if self.main_window and hasattr(self.main_window, "refresh_positions_everywhere"):
+                self.main_window.refresh_positions_everywhere()
 
     def delete_position(self, index):
         position_name = self.positions[index]["name"]
         print(position_name)
 
         # Путь к members.json (или где хранятся участники)
-        members_path = os.path.join(base_dir, "members.json")
+        members_path = os.path.join(base_dir, "db/members.json")
         if os.path.exists(members_path):
             with open(members_path, "r", encoding="utf-8") as f:
                 members = json.load(f)
@@ -1913,8 +1945,8 @@ class EditPositionsOverlay(QFrame):
         del self.positions[index]
         self.save_positions()
         self.refresh_list()
-        if self.main_window and hasattr(self.main_window, "refresh_members"):
-            self.main_window.refresh_members_list()
+        if self.main_window and hasattr(self.main_window, "refresh_positions_everywhere"):
+            self.main_window.refresh_positions_everywhere()
 
     def show_overlay(self):
         self.setGeometry(0, 0, self.parent().width(), self.parent().height())
