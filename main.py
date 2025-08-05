@@ -1186,6 +1186,9 @@ class AddTaskOverlay(QFrame):
 
         # 6. Формируем данные задания
         responsible_name = self.task_responsible_combo.currentText()
+        if not responsible_name:
+            QMessageBox.warning(self, "Ошибка", "Обязан быть ответственный за задание!")
+            return
         responsible_id = self.members_map.get(responsible_name)
         task_data = {
             "id": new_task_id,
