@@ -5,11 +5,40 @@ chcp 65001 >nul
 python --version >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
     echo Python не установлен на этом компьютере.
-    set /p install_python="Хотите установить Python? (y/n): "
+    set /p install_python="Хотите установить Python автоматически? (y/n): "
     if /I "%install_python%"=="y" (
-        echo Пожалуйста, скачайте и установите Python с https://www.python.org/downloads/
-        pause
-        exit /b
+        echo Скачивание установщика Python...
+
+        :: Задаём URL для последней версии Python (Windows x64)
+        set "PYTHON_URL=https://www.python.org/ftp/python/3.12.5/python-3.12.5-amd64.exe"
+        set "INSTALLER=%TEMP%\python_installer.exe"
+
+        :: Скачиваем установщик через PowerShell
+        powershell -Command "(New-Object System.Net.WebClient).DownloadFile('%PYTHON_URL%', '%INSTALLER%')"
+
+        if exist "%INSTALLER%" (
+            echo Установка Python...
+            :: /quiet - тихая установка, InstallAllUsers=1 - для всех пользователей
+            :: PrependPath=1 - добавить Python в PATH
+            "%INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
+            echo Установка завершена. Проверка...
+
+            :: Обновляем переменные окружения в текущей сессии
+            setx PATH "%PATH%;C:\Program Files\Python312\Scripts;C:\Program Files\Python312"
+
+            python --version >nul 2>&1
+            IF %ERRORLEVEL% EQU 0 (
+                echo Python успешно установлен!
+            ) ELSE (
+                echo Ошибка: Python не удалось установить.
+                pause
+                exit /b
+            )
+        ) else (
+            echo Ошибка загрузки установщика Python.
+            pause
+            exit /b
+        )
     ) else (
         echo Без Python выполнение невозможно.
         pause
