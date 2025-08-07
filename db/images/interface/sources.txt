@@ -1,0 +1,8 @@
+settings_active.png - https://www.flaticon.com/ru/free-icon/settings_807390
+settings_default.png - https://www.flaticon.com/ru/free-icon/settings_807313
+add.png - https://www.flaticon.com/ru/free-icon/add_3363871
+color.png - https://www.flaticon.com/ru/free-icon/watercolor_6651740
+edit.png - https://www.flaticon.com/ru/free-icon/pen_1659764
+delete.png - https://www.flaticon.com/ru/free-icon/delete_709518
+
+icon.png and icon_small.png by https://vk.com/forgottenandunknownman
