@@ -17,7 +17,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DelegTa")
-        self.setWindowIcon(QIcon(os.path.join(base_dir, "images/interface/icon.png")))
+        self.setWindowIcon(QIcon(os.path.join(base_dir, "db/images/interface/icon.png")))
         # icon author: https://vk.com/forgottenandunknownman
         self.json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
 
@@ -35,9 +35,9 @@ class MainWindow(QWidget):
         self.bg_label.setPixmap(self.bg_pixmap)
 
         # --- Кнопка настроек ---
-        self.btn_active = QIcon(os.path.join(base_dir, "images/interface/settings_active.png"))
+        self.btn_active = QIcon(os.path.join(base_dir, "db/images/interface/settings_active.png"))
         # source: https://www.flaticon.com/ru/free-icon/settings_807390
-        self.btn_default = QIcon(os.path.join(base_dir, "images/interface/settings_default.png"))
+        self.btn_default = QIcon(os.path.join(base_dir, "db/images/interface/settings_default.png"))
         # source: https://www.flaticon.com/ru/free-icon/settings_807313
 
         self.settings_btn = HoverButton(self.btn_default, self.btn_active, self)
@@ -73,7 +73,7 @@ class MainWindow(QWidget):
         header_layout.addWidget(title_label)
 
         # Кнопка добавления участника
-        btn_add = os.path.join(base_dir, "images/interface/add.png")
+        btn_add = os.path.join(base_dir, "db/images/interface/add.png")
         # source: https://www.flaticon.com/ru/free-icon/add_3363871
         self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir,
                                                                                              "db/members.json"))
@@ -153,7 +153,7 @@ class MainWindow(QWidget):
             # Кнопка добавления задачи только для "Черновик"
             if title == "Черновик":
                 add_task_btn = QPushButton()
-                add_task_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/add.png")))
+                add_task_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/add.png")))
                 add_task_btn.setIconSize(QSize(32, 32))
                 add_task_btn.setFixedSize(30, 30)
                 add_task_btn.setStyleSheet("""
@@ -385,10 +385,10 @@ class MainWindow(QWidget):
 
     def load_tasks_into_panels(self):
         files_map = {
-            "Черновик": os.path.join(base_dir, "tasks/draft_tasks.json"),
-            "В процессе": os.path.join(base_dir, "tasks/progress_tasks.json"),
-            "Завершено": os.path.join(base_dir, "tasks/finished_tasks.json"),
-            "Отложено": os.path.join(base_dir, "tasks/delayed_tasks.json"),
+            "Черновик": os.path.join(base_dir, "db/tasks/draft_tasks.json"),
+            "В процессе": os.path.join(base_dir, "db/tasks/progress_tasks.json"),
+            "Завершено": os.path.join(base_dir, "db/tasks/finished_tasks.json"),
+            "Отложено": os.path.join(base_dir, "db/tasks/delayed_tasks.json"),
         }
 
         for panel in self.columns:
@@ -519,8 +519,8 @@ class MainWindow(QWidget):
 
         # Загружаем задачи из progress и delayed
         task_files = [
-            os.path.join(base_dir, "tasks/progress_tasks.json"),
-            os.path.join(base_dir, "tasks/delayed_tasks.json")
+            os.path.join(base_dir, "db/tasks/progress_tasks.json"),
+            os.path.join(base_dir, "db/tasks/delayed_tasks.json")
         ]
 
         task_counts = {}
@@ -553,7 +553,7 @@ class MainWindow(QWidget):
 
         # Удаляем из всех файлов
         for fname in files_map.values():
-            path = os.path.join(base_dir, "tasks", fname)
+            path = os.path.join(base_dir, "db/tasks", fname)
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
                     tasks = json.load(f)
@@ -562,7 +562,7 @@ class MainWindow(QWidget):
                     json.dump(tasks, f, ensure_ascii=False, indent=4)
 
         # Добавляем в новый файл
-        new_file = os.path.join(base_dir, "tasks", files_map[new_status])
+        new_file = os.path.join(base_dir, "db/tasks", files_map[new_status])
         if os.path.exists(new_file):
             with open(new_file, "r", encoding="utf-8") as f:
                 tasks = json.load(f)
@@ -847,7 +847,7 @@ class TaskInfoDialog(QDialog):
 
         # --- Кнопка редактирования ---
         edit_btn = QPushButton()
-        edit_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/edit.png")))
+        edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit.png")))
         edit_btn.setIconSize(QSize(20, 20))
         edit_btn.setFixedSize(30, 30)
         edit_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
@@ -1164,10 +1164,10 @@ class AddTaskOverlay(QFrame):
         # 4. Генерация ID
         def generate_unique_id():
             all_task_files = [
-                os.path.join(base_dir, "tasks/draft_tasks.json"),
-                os.path.join(base_dir, "tasks/progress_tasks.json"),
-                os.path.join(base_dir, "tasks/finished_tasks.json"),
-                os.path.join(base_dir, "tasks/delayed_tasks.json")
+                os.path.join(base_dir, "db/tasks/draft_tasks.json"),
+                os.path.join(base_dir, "db/tasks/progress_tasks.json"),
+                os.path.join(base_dir, "db/tasks/finished_tasks.json"),
+                os.path.join(base_dir, "db/tasks/delayed_tasks.json")
             ]
 
             while True:
@@ -1178,7 +1178,7 @@ class AddTaskOverlay(QFrame):
         new_task_id = generate_unique_id()
 
         # 5. Загружаем существующие задания
-        tasks_path = os.path.join(base_dir, "tasks/draft_tasks.json")
+        tasks_path = os.path.join(base_dir, "db/tasks/draft_tasks.json")
         tasks = []
         if os.path.exists(tasks_path):
             with open(tasks_path, "r", encoding="utf-8") as f:
@@ -1230,7 +1230,7 @@ class AddTaskOverlay(QFrame):
             else self.deadline_edit.dateTime().toString("dd.MM.yyyy HH:mm")
 
         # Сохраняем изменения в файле
-        file_path = os.path.join(self.base_dir, f"tasks/{self.file}")
+        file_path = os.path.join(self.base_dir, f"db/tasks/{self.file}")
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
                 tasks = json.load(f)
@@ -1250,7 +1250,7 @@ class AddTaskOverlay(QFrame):
         reply = QMessageBox.question(self, "Подтверждение", "Удалить это задание?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            file_path = os.path.join(self.base_dir, f"tasks/{self.file}")
+            file_path = os.path.join(self.base_dir, f"db/tasks/{self.file}")
             if os.path.exists(file_path):
                 with open(file_path, "r", encoding="utf-8") as f:
                     tasks = json.load(f)
@@ -1337,7 +1337,7 @@ class MemberInfoDialog(QDialog):
         # --- Кнопки ---
         btn_layout = QHBoxLayout()
         edit_btn = QPushButton()
-        edit_icon = QIcon(os.path.join(base_dir, "images/interface/edit.png"))
+        edit_icon = QIcon(os.path.join(base_dir, "db/images/interface/edit.png"))
         edit_btn.setIcon(edit_icon)
         edit_btn.setFixedSize(30, 30)
         edit_btn.setFlat(True)
@@ -1777,7 +1777,7 @@ class EditPositionsOverlay(QFrame):
         self.position_input.setPlaceholderText("Введите должность...")
         self.position_input.setStyleSheet("border: none; font-size: 22px; color: white;")
         add_btn = QPushButton()
-        add_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/add.png")))
+        add_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/add.png")))
         add_btn.setIconSize(QSize(30, 30))
         add_btn.setFixedSize(30, 30)
         add_btn.setStyleSheet("border: none;")
@@ -1822,7 +1822,7 @@ class EditPositionsOverlay(QFrame):
 
             # Кнопка выбора цвета
             color_btn = QPushButton()
-            color_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/color.png")))  # Иконка палитры
+            color_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/color.png")))  # Иконка палитры
             # source: https://www.flaticon.com/ru/free-icon/watercolor_6651740
             color_btn.setIconSize(QSize(20, 20))
             color_btn.setFixedSize(30, 30)
@@ -1832,7 +1832,7 @@ class EditPositionsOverlay(QFrame):
 
             # Кнопка редактирования
             edit_btn = QPushButton()
-            edit_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/edit.png")))
+            edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit.png")))
             # source: https://www.flaticon.com/ru/free-icon/pen_1659764
             edit_btn.setIconSize(QSize(20, 20))
             edit_btn.setFixedSize(30, 30)
@@ -1842,7 +1842,7 @@ class EditPositionsOverlay(QFrame):
 
             # Кнопка удаления
             del_btn = QPushButton()
-            del_btn.setIcon(QIcon(os.path.join(base_dir, "images/interface/delete.png")))
+            del_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/delete.png")))
             # source: https://www.flaticon.com/ru/free-icon/delete_709518
             del_btn.setIconSize(QSize(20, 20))
             del_btn.setFixedSize(30, 30)

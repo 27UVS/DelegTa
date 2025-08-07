@@ -7,7 +7,7 @@ set "CURRENT_DIR=%~dp0"
 :: Указываем пути
 set "TARGET=%CURRENT_DIR%start_delegation_tasks.bat"
 set "SHORTCUT=%CURRENT_DIR%DelegTa.lnk"
-set "ICON=%CURRENT_DIR%images\interface\icon_small.ico"
+set "ICON=%CURRENT_DIR%db\images\interface\icon_small.ico"
 
 :: Создаём временный VBScript
 set "VBS=%TEMP%\make_shortcut.vbs"
