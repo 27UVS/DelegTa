@@ -1,11 +1,12 @@
 import os
+import re
 import sys
 import json
 import uuid
 
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit,
-    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit, QInputDialog,
+    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox, QTextBrowser
 )
 from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag
 from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData
@@ -835,10 +836,15 @@ class TaskInfoDialog(QDialog):
 
         desc_label = QLabel("Описание:")
         desc_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
-        description = QTextEdit()
-        description.setReadOnly(True)
-        description.setText(task_data.get("description", "Нет описания"))
+
+        description = QTextBrowser()
+        description.setOpenExternalLinks(True)
         description.setStyleSheet("background-color: #222; color: white; font-size: 14px;")
+
+        html = task_data.get("description", "Нет описания")
+        description.setHtml(html)
+        description.setHtml(html)
+
         right_layout.addWidget(desc_label)
         right_layout.addWidget(description)
         main_layout.addWidget(right_frame)
@@ -1033,14 +1039,21 @@ class AddTaskOverlay(QFrame):
         right_col.addWidget(desc_label)
         right_col.addWidget(self.task_description)
 
+        link_btn = QPushButton("🔗")
+        link_btn.setFixedSize(40, 40)
+        link_btn.setToolTip("Добавить ссылку")
+        link_btn.clicked.connect(self.insert_link_into_description)
+        right_col.addWidget(link_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
         # Объединяем колонки
         content_layout.addLayout(left_col, 1)
         content_layout.addLayout(right_col, 2)
         panel_layout.addLayout(content_layout)
 
+        # Заполнение данных при редактировании
         if self.edit_mode and self.task_data:
             self.task_name_input.setText(self.task_data.get("name", ""))
-            self.task_description.setPlainText(self.task_data.get("description", ""))
+            self.task_description.setHtml(self.task_data.get("description", ""))
 
             # Ответственный
             responsible_id = self.task_data.get("responsible")
@@ -1059,6 +1072,7 @@ class AddTaskOverlay(QFrame):
             if self.task_data.get("deadline"):
                 self.deadline_edit.setDateTime(QDateTime.fromString(self.task_data["deadline"], "dd.MM.yyyy HH:mm"))
 
+        # Определение кнопок при режиме создания и редактирования задания
         if not self.edit_mode:
             create_btn = QPushButton("Создать задание")
             create_btn.setStyleSheet("""
@@ -1139,6 +1153,18 @@ class AddTaskOverlay(QFrame):
             if not self.permanent_checkbox.isChecked():
                 self.deadline_edit.setEnabled(True)
 
+    def insert_link_into_description(self):
+        cursor = self.task_description.textCursor()
+        selected_text = cursor.selectedText()
+        if not selected_text:
+            return  # Ничего не выделено
+
+        url, ok = QInputDialog.getText(self, "Добавить ссылку", "Введите URL:")
+        if ok and url:
+            # Создаем HTML-ссылку
+            html_link = f'<a href="{url}">{selected_text}</a>'
+            cursor.insertHtml(html_link)
+
     def create_new_task(self):
         task_name = self.task_name_input.text().strip()
 
@@ -1190,11 +1216,12 @@ class AddTaskOverlay(QFrame):
             QMessageBox.warning(self, "Ошибка", "Обязан быть ответственный за задание!")
             return
         responsible_id = self.members_map.get(responsible_name)
+
         task_data = {
             "id": new_task_id,
             "name": task_name,
             "responsible": responsible_id,
-            "description": self.task_description.toPlainText().strip(),
+            "description": self.task_description.toHtml(),
             "created_at": None if self.permanent_checkbox.isChecked() else self.created_at_edit.dateTime().toString(
                 "dd.MM.yyyy HH:mm"),
             "deadline": None if self.no_deadline_checkbox.isChecked() or self.permanent_checkbox.isChecked()
@@ -1219,7 +1246,7 @@ class AddTaskOverlay(QFrame):
     def save_task(self):
         # Обновляем данные
         self.task_data["name"] = self.task_name_input.text().strip()
-        self.task_data["description"] = self.task_description.toPlainText().strip()
+        self.task_data["description"] = self.task_description.toHtml()
         self.task_data["responsible"] = self.task_responsible_combo.currentData()
         self.task_data["is_permanent"] = self.permanent_checkbox.isChecked()
         self.task_data["no_deadline"] = self.no_deadline_checkbox.isChecked()
