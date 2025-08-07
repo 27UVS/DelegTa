@@ -19,7 +19,6 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle("DelegTa")
         self.setWindowIcon(QIcon(os.path.join(base_dir, "db/images/interface/icon.png")))
-        # icon author: https://vk.com/forgottenandunknownman
         self.json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
 
         # --- Загружаем сохранённый фон ---
@@ -37,9 +36,7 @@ class MainWindow(QWidget):
 
         # --- Кнопка настроек ---
         self.btn_active = QIcon(os.path.join(base_dir, "db/images/interface/settings_active.png"))
-        # source: https://www.flaticon.com/ru/free-icon/settings_807390
         self.btn_default = QIcon(os.path.join(base_dir, "db/images/interface/settings_default.png"))
-        # source: https://www.flaticon.com/ru/free-icon/settings_807313
 
         self.settings_btn = HoverButton(self.btn_default, self.btn_active, self)
         self.settings_btn.clicked.connect(self.toggle_settings_panel)
@@ -75,7 +72,6 @@ class MainWindow(QWidget):
 
         # Кнопка добавления участника
         btn_add = os.path.join(base_dir, "db/images/interface/add.png")
-        # source: https://www.flaticon.com/ru/free-icon/add_3363871
         self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir,
                                                                                              "db/members.json"))
         self.add_member_btn = QPushButton()
@@ -1850,7 +1846,6 @@ class EditPositionsOverlay(QFrame):
             # Кнопка выбора цвета
             color_btn = QPushButton()
             color_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/color.png")))  # Иконка палитры
-            # source: https://www.flaticon.com/ru/free-icon/watercolor_6651740
             color_btn.setIconSize(QSize(20, 20))
             color_btn.setFixedSize(30, 30)
             color_btn.setStyleSheet("border: none;")
@@ -1860,7 +1855,6 @@ class EditPositionsOverlay(QFrame):
             # Кнопка редактирования
             edit_btn = QPushButton()
             edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit.png")))
-            # source: https://www.flaticon.com/ru/free-icon/pen_1659764
             edit_btn.setIconSize(QSize(20, 20))
             edit_btn.setFixedSize(30, 30)
             edit_btn.setStyleSheet("border: none;")
@@ -1870,7 +1864,6 @@ class EditPositionsOverlay(QFrame):
             # Кнопка удаления
             del_btn = QPushButton()
             del_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/delete.png")))
-            # source: https://www.flaticon.com/ru/free-icon/delete_709518
             del_btn.setIconSize(QSize(20, 20))
             del_btn.setFixedSize(30, 30)
             del_btn.setStyleSheet("border: none;")
