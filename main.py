@@ -1,15 +1,16 @@
 import os
-import re
 import sys
 import json
 import uuid
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit, QInputDialog,
-    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox, QTextBrowser
+    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox, QTextBrowser,
+    QListWidget, QToolButton, QListWidgetItem
 )
-from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag
-from PySide6.QtCore import Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData
+from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMouseEvent
+from PySide6.QtCore import (Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData,
+                            QEvent, QPoint, QObject)
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -405,67 +406,14 @@ class MainWindow(QWidget):
                 tasks = json.load(f)
 
             for task in reversed(tasks):  # в обратном порядке
+                # Обеспечим, что responsible — всегда список
+                responsible = task.get("responsible", [])
+                if isinstance(responsible, str):
+                    task["responsible"] = [responsible]
+                elif not isinstance(responsible, list):
+                    task["responsible"] = []
+
                 panel.add_task(task)
-
-    def add_task_card(self, layout, task):
-        card = QFrame()
-        card.setStyleSheet("""
-            background-color: white;
-            border-radius: 10px;
-        """)
-        card.setFixedWidth(220)
-        card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
-
-        vbox = QVBoxLayout(card)
-        vbox.setContentsMargins(8, 8, 8, 8)
-        vbox.setSpacing(5)
-
-        # 1. Название задачи
-        name_label = QLabel(task.get("name", "Без названия"))
-        name_label.setWordWrap(True)
-        name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
-        vbox.addWidget(name_label)
-
-        # 2. Ответственный
-        responsible_id = task.get("responsible", "")
-        responsible = self.get_member_by_id(responsible_id)
-        responsible_name = responsible.get("name", "Неизвестный")
-        resp_label = QLabel(f"Ответственный: {responsible_name}")
-        resp_label.setWordWrap(True)
-        resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        resp_label.setStyleSheet("font-size: 14px; color: #333;")
-        vbox.addWidget(resp_label)
-
-        # 3. Время (зависит от условий)
-        time_label = QLabel()
-        if task.get("is_permanent"):
-            time_label.setText("П")
-            time_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
-        elif task.get("no_deadline"):
-            created_date = QDateTime.fromString(task.get("created_at"), "dd.MM.yyyy HH:mm")
-            if created_date.isValid():
-                days = created_date.daysTo(QDateTime.currentDateTime())
-                time_label.setText(f"{days} д.")
-                time_label.setStyleSheet("font-size: 14px; color: gray;")
-            else:
-                time_label.setText("—")
-        else:
-            deadline = QDateTime.fromString(task.get("deadline"), "dd.MM.yyyy HH:mm")
-            now = QDateTime.currentDateTime()
-            if deadline.isValid():
-                days_diff = now.daysTo(deadline)
-                if days_diff >= 0:
-                    time_label.setText(f"ост. {days_diff} д.")
-                    time_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
-                else:
-                    time_label.setText(f"проср. {abs(days_diff)} д.")
-                    time_label.setStyleSheet("font-size: 14px; color: red; font-weight: bold;")
-            else:
-                time_label.setText("—")
-        vbox.addWidget(time_label)
-
-        layout.insertWidget(layout.count() - 1, card)  # вставляем перед stretch
 
     @staticmethod
     def get_member_by_id(member_id):
@@ -526,9 +474,17 @@ class MainWindow(QWidget):
                 with open(file_path, "r", encoding="utf-8") as f:
                     tasks = json.load(f)
                     for task in tasks:
-                        responsible_id = task.get("responsible")
-                        if responsible_id:
-                            task_counts[responsible_id] = task_counts.get(responsible_id, 0) + 1
+                        responsible = task.get("responsible")
+
+                        # Приводим к списку
+                        if isinstance(responsible, str):
+                            responsible = [responsible]
+                        elif not isinstance(responsible, list):
+                            responsible = []
+
+                        # Увеличиваем счётчик каждому участнику
+                        for user_id in responsible:
+                            task_counts[user_id] = task_counts.get(user_id, 0) + 1
 
         # Обновляем количество задач у участников
         for member in members:
@@ -660,16 +616,31 @@ class TaskCard(QFrame):
         name_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         vbox.addWidget(name_label)
 
-        # --- Ответственный за задание ---
-        responsible_id = task_data.get("responsible", "")
-        resp = main_window.get_member_by_id(responsible_id)
-        resp_name = resp.get("name", "Неизвестный")
-        resp_label = QLabel(f"Ответственный: {resp_name}")
-        resp_label.setStyleSheet("font-size: 16px; color: #333;;")
+        # --- Ответственные за задание ---
+        responsibles = task_data.get("responsible", [])
+
+        # Поддержка старого формата — если один ID в виде строки
+        if isinstance(responsibles, str):
+            responsibles = [responsibles]
+        elif not isinstance(responsibles, list):
+            responsibles = []
+
+        # Получаем имена по ID
+        names = []
+        for user_id in responsibles:
+            member = main_window.get_member_by_id(user_id)
+            name = member.get("name", "Неизвестный") if member else "Неизвестный"
+            names.append(name)
+
+        # Объединяем имена в строку
+        responsible_names_str = ", ".join(names) if names else "Не указано"
+
+        # Отображаем
+        resp_label = QLabel(f"Ответственные: {responsible_names_str}")
+        resp_label.setStyleSheet("font-size: 16px; color: #333;")
         resp_label.setWordWrap(True)
         resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         vbox.addWidget(resp_label)
-
         # --- Время задания ---
         if self.panel_title != "Завершено":
             time_label = QLabel()
@@ -778,30 +749,50 @@ class TaskInfoDialog(QDialog):
         left_layout = QVBoxLayout()
 
         # Ответственный (аватар + имя)
-        responsible_id = task_data.get("responsible")
+        responsible_data = task_data.get("responsible", [])
+        if isinstance(responsible_data, str):
+            responsible_ids = [responsible_data]
+        elif isinstance(responsible_data, list):
+            responsible_ids = responsible_data
+        else:
+            responsible_ids = []
+
         avatar_label = QLabel()
         avatar_label.setFixedSize(64, 64)
 
-        responsible_name = "Не назначен"
+        responsible_names = []
         avatar_path = None
-        if parent and hasattr(parent, "get_member_by_id"):
-            member = parent.get_member_by_id(responsible_id)
+
+        # Если только один участник — отображаем его аватар
+        if len(responsible_ids) == 1 and parent and hasattr(parent, "get_member_by_id"):
+            member = parent.get_member_by_id(responsible_ids[0])
             if member:
-                responsible_name = member.get("name", "Неизвестно")
+                responsible_names.append(member.get("name", "Неизвестно"))
                 avatar_path = member.get("avatar")
 
-        if avatar_path and os.path.exists(avatar_path):
-            pixmap = QPixmap(avatar_path).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
-                                                 Qt.TransformationMode.SmoothTransformation)
-            avatar_label.setPixmap(pixmap)
+                if avatar_path and os.path.exists(avatar_path):
+                    pixmap = QPixmap(avatar_path).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
+                                                         Qt.TransformationMode.SmoothTransformation)
+                    avatar_label.setPixmap(pixmap)
+                else:
+                    avatar_label.setStyleSheet("border-radius: 32px; background-color: #ccc;")
         else:
-            avatar_label.setStyleSheet("border-radius: 32px; background-color: #ccc;")
+            # Если несколько — собираем имена, но не показываем аватар
+            if parent and hasattr(parent, "get_member_by_id"):
+                for uid in responsible_ids:
+                    member = parent.get_member_by_id(uid)
+                    if member:
+                        responsible_names.append(member.get("name", "Неизвестно"))
 
-        name_label = QLabel(responsible_name)
-        name_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+            avatar_label.setVisible(False)  # скрываем аватар
 
-        left_layout.addWidget(avatar_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        left_layout.addWidget(name_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        # Создаём и добавляем подпись с именами
+        responsible_label = QLabel(
+            "Ответственные: " + ", ".join(responsible_names) if responsible_names else "Ответственный: Не назначен")
+        responsible_label.setStyleSheet("font-size: 14px; color: white;")
+
+        left_layout.addWidget(avatar_label)
+        left_layout.addWidget(responsible_label)
 
         # Время
         created_label = QLabel()
@@ -862,9 +853,30 @@ class TaskInfoDialog(QDialog):
         self.close()
 
 
+class ClickOutsideFilter(QObject):
+    def __init__(self, parent_widget, target_widgets, hide_callback):
+        super().__init__(parent_widget)
+        self.target_widgets = target_widgets
+        self.hide_callback = hide_callback
+
+    def eventFilter(self, watched, event):
+        if isinstance(event, QMouseEvent) and event.type() == QEvent.Type.MouseButtonPress:
+            global_pos = event.globalPosition().toPoint()
+
+            for w in self.target_widgets:
+                local_pos = w.mapFromGlobal(global_pos)
+                if w.rect().contains(local_pos):
+                    return False  # клик внутри — не скрываем
+
+            # Клик вне всех целевых виджетов
+            self.hide_callback()
+        return False
+
+
 class AddTaskOverlay(QFrame):
     def __init__(self, parent=None, main_window=None, base_dir=None, task_data=None, status=None):
         super().__init__(parent)
+        self.responsible_list_visible = False  # флаг видимости
         self.main_window = main_window
         self.base_dir = base_dir
         self.task_data = task_data
@@ -941,17 +953,42 @@ class AddTaskOverlay(QFrame):
         left_col.addWidget(name_label)
         left_col.addWidget(self.task_name_input)
 
-        # Ответственный
-        responsible_label = QLabel("Ответственный")
-        responsible_label.setStyleSheet("font-size: 16px; font-weight: bold;")
-        self.task_responsible_combo = QComboBox()
-        self.task_responsible_combo.setStyleSheet("""
+        # Ответственные
+        self.responsible_label = QLabel("Ответственные")
+        self.responsible_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+
+        self.responsible_dropdown_btn = QToolButton()
+        self.responsible_dropdown_btn.setCheckable(True)
+        self.responsible_dropdown_btn.setText("Выберите ответственных")
+        self.responsible_dropdown_btn.setStyleSheet("""
             padding: 10px; font-size: 16px; border-radius: 10px;
             border: 1px solid #555; background-color: #3a3a3a; color: white;
         """)
-        self.load_members_into_combo()
-        left_col.addWidget(responsible_label)
-        left_col.addWidget(self.task_responsible_combo)
+
+        self.responsible_list_widget = QListWidget()
+        self.responsible_list_widget.setWindowFlags(Qt.WindowType.Popup)  # Важно: popup окно
+        self.responsible_list_widget.setStyleSheet("""
+            font-size: 14px; background-color: #3a3a3a; color: white;
+            border: 1px solid #555; border-radius: 10px;
+        """)
+        self.responsible_list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+
+        # Скрываем список из layout, он теперь отдельное окно
+        self.responsible_list_widget.hide()
+        self.responsible_dropdown_btn.toggled.connect(self.toggle_responsible_list)
+        self.responsible_list_widget.itemChanged.connect(self.update_button_text)
+
+        self.click_filter = ClickOutsideFilter(
+            self,
+            [self.responsible_list_widget, self.responsible_dropdown_btn],
+            self.hide_responsible_list
+        )
+        QApplication.instance().installEventFilter(self.click_filter)
+
+        # Добавляем в layout только кнопку и лейбл (список — отдельное окно)
+        self.load_members_into_list_widget()
+        left_col.addWidget(self.responsible_label)
+        left_col.addWidget(self.responsible_dropdown_btn)
 
         # Время
         datetime_style = """
@@ -1002,7 +1039,7 @@ class AddTaskOverlay(QFrame):
         left_col.addWidget(date_end_label)
         left_col.addWidget(self.deadline_edit)
 
-        # Чекбоксы
+        # Чекбоксы: постоянное задание + нет дедлайна
         self.permanent_checkbox = QCheckBox("Постоянное задание")
         self.no_deadline_checkbox = QCheckBox("Задание без дедлайна")
         for cb in [self.permanent_checkbox, self.no_deadline_checkbox]:
@@ -1035,8 +1072,11 @@ class AddTaskOverlay(QFrame):
         right_col.addWidget(desc_label)
         right_col.addWidget(self.task_description)
 
-        link_btn = QPushButton("🔗")
+        link_btn = QPushButton()
+        link_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/link.png")))
+        link_btn.setIconSize(QSize(40, 40))
         link_btn.setFixedSize(40, 40)
+        link_btn.setStyleSheet("border: none;")
         link_btn.setToolTip("Добавить ссылку")
         link_btn.clicked.connect(self.insert_link_into_description)
         right_col.addWidget(link_btn, alignment=Qt.AlignmentFlag.AlignRight)
@@ -1051,12 +1091,15 @@ class AddTaskOverlay(QFrame):
             self.task_name_input.setText(self.task_data.get("name", ""))
             self.task_description.setHtml(self.task_data.get("description", ""))
 
-            # Ответственный
-            responsible_id = self.task_data.get("responsible")
-            if responsible_id:
-                idx = self.task_responsible_combo.findData(responsible_id)
-                if idx >= 0:
-                    self.task_responsible_combo.setCurrentIndex(idx)
+            # Ответственные
+            responsibles = self.task_data.get("responsible", [])
+            if isinstance(responsibles, str):
+                responsibles = [responsibles]
+
+            for i in range(self.responsible_list_widget.count()):
+                item = self.responsible_list_widget.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) in responsibles:
+                    item.setCheckState(Qt.CheckState.Checked)
 
             # Чекбоксы
             self.permanent_checkbox.setChecked(self.task_data.get("is_permanent", False))
@@ -1107,19 +1150,66 @@ class AddTaskOverlay(QFrame):
 
         layout.addWidget(panel)
 
-    def load_members_into_combo(self):
+    def toggle_responsible_list(self, checked):
+        if checked:
+            pos = self.responsible_dropdown_btn.mapToGlobal(QPoint(0, self.responsible_dropdown_btn.height()))
+            self.responsible_list_widget.move(pos)
+            self.responsible_list_widget.resize(250, 200)
+            self.responsible_list_widget.show()
+            self.responsible_list_visible = True
+        else:
+            self.responsible_list_widget.hide()
+            self.responsible_list_visible = False
+
+    def hide_responsible_list(self):
+        self.responsible_dropdown_btn.setChecked(False)
+        self.responsible_list_widget.hide()
+        self.responsible_list_visible = False
+
+    def update_button_text(self):
+        selected_names = []
+        for i in range(self.responsible_list_widget.count()):
+            item = self.responsible_list_widget.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                selected_names.append(item.text())
+
+        if selected_names:
+            self.responsible_dropdown_btn.setText(", ".join(selected_names))
+        else:
+            self.responsible_dropdown_btn.setText("Выберите ответственных")
+
+    def load_members_into_list_widget(self):
+        self.responsible_list_widget.clear()
         json_path = os.path.join(base_dir, "db/members.json")
-        self.task_responsible_combo.clear()
-        self.members_map = {}  # {name: id}
 
         if os.path.exists(json_path):
             with open(json_path, "r", encoding="utf-8") as f:
                 members = json.load(f)
                 for member in members:
-                    name = member["name"]
-                    member_id = member.get("id")
-                    self.members_map[name] = member_id
-                    self.task_responsible_combo.addItem(name, member_id)
+                    item = QListWidgetItem(member["name"])
+                    item.setData(Qt.ItemDataRole.UserRole, member.get("id"))
+                    item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                    self.responsible_list_widget.addItem(item)
+
+    # Для получения выбранных ответственных (UUID) сделай метод:
+    def get_selected_responsibles(self):
+        selected_ids = []
+        for i in range(self.responsible_list_widget.count()):
+            item = self.responsible_list_widget.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                selected_ids.append(item.data(Qt.ItemDataRole.UserRole))
+        return selected_ids
+
+    def get_selected_responsible_ids(self):
+        ids = []
+        for i in range(self.responsible_list_widget.count()):
+            item = self.responsible_list_widget.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                member_id = self.members_map.get(item.text())
+                if member_id:
+                    ids.append(member_id)
+        return ids
 
     def toggle_permanent_task(self, state):
         if state == Qt.CheckState.Checked:
@@ -1207,16 +1297,15 @@ class AddTaskOverlay(QFrame):
                 tasks = json.load(f)
 
         # 6. Формируем данные задания
-        responsible_name = self.task_responsible_combo.currentText()
-        if not responsible_name:
-            QMessageBox.warning(self, "Ошибка", "Обязан быть ответственный за задание!")
+        responsible_ids = self.get_selected_responsible_ids()
+        if not responsible_ids:
+            QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного ответственного!")
             return
-        responsible_id = self.members_map.get(responsible_name)
 
         task_data = {
             "id": new_task_id,
             "name": task_name,
-            "responsible": responsible_id,
+            "responsible": responsible_ids,
             "description": self.task_description.toHtml(),
             "created_at": None if self.permanent_checkbox.isChecked() else self.created_at_edit.dateTime().toString(
                 "dd.MM.yyyy HH:mm"),
@@ -1240,10 +1329,16 @@ class AddTaskOverlay(QFrame):
         self.close_overlay()
 
     def save_task(self):
+        responsible_ids = []
+        for i in range(self.responsible_list_widget.count()):
+            item = self.responsible_list_widget.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                responsible_ids.append(item.data(Qt.ItemDataRole.UserRole))
+
         # Обновляем данные
         self.task_data["name"] = self.task_name_input.text().strip()
         self.task_data["description"] = self.task_description.toHtml()
-        self.task_data["responsible"] = self.task_responsible_combo.currentData()
+        self.task_data["responsible"] = responsible_ids
         self.task_data["is_permanent"] = self.permanent_checkbox.isChecked()
         self.task_data["no_deadline"] = self.no_deadline_checkbox.isChecked()
         self.task_data["created_at"] = None if self.permanent_checkbox.isChecked() else \
@@ -1265,6 +1360,7 @@ class AddTaskOverlay(QFrame):
                 json.dump(tasks, f, ensure_ascii=False, indent=4)
 
         self.main_window.update_members_tasks_count()
+        self.main_window.refresh_members_list()
         self.main_window.load_tasks_into_panels()
         QMessageBox.information(self, "Успех", "Изменения сохранены!")
         self.close_overlay()
