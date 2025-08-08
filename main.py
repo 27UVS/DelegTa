@@ -6,7 +6,7 @@ import uuid
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit, QInputDialog,
     QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox, QTextBrowser,
-    QListWidget, QToolButton, QListWidgetItem
+    QListWidget, QToolButton, QListWidgetItem, QSpinBox
 )
 from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMouseEvent
 from PySide6.QtCore import (Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData,
@@ -272,13 +272,19 @@ class MainWindow(QWidget):
 
     @staticmethod
     def sort_members_by_post(members):
-        post_priority = ["Руководитель", "Сценарист", "Художник", "Партнёр"]
+        positions_path = os.path.join(base_dir, "db/positions.json")
+        if os.path.exists(positions_path):
+            with open(positions_path, "r", encoding="utf-8") as f:
+                positions = json.load(f).get("positions", [])
+        else:
+            positions = []
+
+        # Формируем словарь {должность: приоритет}
+        priority_map = {pos["name"]: pos.get("priority", 9999) for pos in positions}
 
         def get_priority(member):
             post = member.get("post", "")
-            if post in post_priority:
-                return post_priority.index(post)
-            return len(post_priority)  # если должность не в списке, отправляем в конец
+            return priority_map.get(post, 9999)
 
         return sorted(members, key=get_priority)
 
@@ -1928,6 +1934,8 @@ class EditPositionsOverlay(QFrame):
             if widget:
                 widget.deleteLater()
 
+        self.positions.sort(key=lambda x: x.get("priority", 0))
+
         # Добавим все должности
         for idx, pos in enumerate(self.positions):
             row = QWidget()
@@ -1938,6 +1946,25 @@ class EditPositionsOverlay(QFrame):
             label = QLabel(pos["name"])
             label.setStyleSheet(f"font-size: 22px; color: {pos['color']}")
             row_layout.addWidget(label)
+
+            # Приоритет должности
+            priority_input = QSpinBox()
+            priority_input.setRange(1, 99)
+            priority_input.setStyleSheet("font-size: 18px;")
+            priority_input.setValue(pos.get("priority", 1))
+
+            # Сигнал, когда редактирование завершено (Enter или потеря фокуса)
+            priority_input.lineEdit().editingFinished.connect(
+                lambda i=idx, spin=priority_input: self.change_priority(i, spin.value())
+            )
+
+            # Принудительно завершаем редактирование по нажатию Enter
+            def on_return_pressed():
+                priority_input.clearFocus()
+                priority_input.setFocus()  # вернём фокус, если нужно, или можно убрать
+
+            priority_input.lineEdit().returnPressed.connect(on_return_pressed)
+            row_layout.addWidget(priority_input)
 
             # Кнопка выбора цвета
             color_btn = QPushButton()
@@ -1968,10 +1995,32 @@ class EditPositionsOverlay(QFrame):
 
             self.positions_layout.addWidget(row)
 
+    def change_priority(self, index, new_priority):
+        old_priority = self.positions[index]["priority"]
+        if new_priority == old_priority:
+            return
+
+        if any(p["priority"] == new_priority for i, p in enumerate(self.positions) if i != index):
+            QMessageBox.warning(self, "Ошибка", f"Приоритет {new_priority} уже занят.")
+            self.refresh_list()
+            return
+
+        self.positions[index]["priority"] = new_priority
+        self.save_positions()
+        self.refresh_list()
+        if self.main_window and hasattr(self.main_window, "refresh_positions_everywhere"):
+            self.main_window.refresh_positions_everywhere()
+
     def add_position(self):
         new_pos = self.position_input.text().strip()
+
         if new_pos and all(pos["name"] != new_pos for pos in self.positions):
-            self.positions.append({"name": new_pos, "color": "#FFFFFF"})
+            priority = self.get_next_priority()
+            self.positions.append({
+                "name": new_pos,
+                "color": "#FFFFFF",
+                "priority": priority
+            })
             self.save_positions()
             self.refresh_list()
             self.position_input.clear()
@@ -1979,6 +2028,12 @@ class EditPositionsOverlay(QFrame):
                 self.main_window.refresh_positions_everywhere()
         else:
             QMessageBox.warning(self, "Ошибка", "Такая должность уже есть или поле пустое!")
+
+    def get_next_priority(self):
+        used = sorted(pos.get("priority", 0) for pos in self.positions)
+        for i in range(1, len(used) + 2):
+            if i not in used:
+                return i
 
     def edit_position(self, index):
         row_widget = self.positions_layout.itemAt(index).widget()
@@ -2045,6 +2100,7 @@ class EditPositionsOverlay(QFrame):
 
     def delete_position(self, index):
         position_name = self.positions[index]["name"]
+        deleted_priority = self.positions[index]["priority"]
         print(position_name)
 
         # Путь к members.json (или где хранятся участники)
@@ -2062,6 +2118,9 @@ class EditPositionsOverlay(QFrame):
                 return  # Выходим, не удаляем
         # Если должность не используется, удаляем
         del self.positions[index]
+        for pos in self.positions:
+            if pos["priority"] > deleted_priority:
+                pos["priority"] -= 1
         self.save_positions()
         self.refresh_list()
         if self.main_window and hasattr(self.main_window, "refresh_positions_everywhere"):
