@@ -213,41 +213,6 @@ class MainWindow(QWidget):
         self.settings_panel.setGeometry(self.width(), 0, 300, self.height())
         self.panel_visible = False
 
-    def init_members_panel(self):
-        """Создаем панель участников с прокруткой"""
-        self.members_panel = QFrame()
-        self.members_panel.setFixedWidth(280)
-        self.members_panel.setStyleSheet("""
-            background-color: rgba(30, 30, 30, 230);
-            border: none;
-            color: white;
-        """)
-
-        members_layout = QVBoxLayout()
-        members_layout.setContentsMargins(0, 0, 0, 0)
-        members_layout.setSpacing(10)
-
-        # Заголовок
-        title_bar = QHBoxLayout()
-        title = QLabel("Участники")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
-        title_bar.addWidget(title)
-        title_bar.addStretch()
-        members_layout.addLayout(title_bar)
-
-        # Область прокрутки
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("background-color: transparent; border: none;")
-
-        # Контейнер для блоков участников
-        self.members_container = QWidget()
-        self.members_container_layout = QVBoxLayout(self.members_container)
-        self.members_container_layout.setContentsMargins(0, 0, 0, 0)
-        self.members_container_layout.setSpacing(8)
-
-        self.scroll_area.setWidget(self.members_container)
-        members_layout.addWidget(self.scroll_area)
 
     def refresh_members_list(self):
         # Очистить старые элементы
@@ -676,19 +641,6 @@ class TaskCard(QFrame):
                     time_label.setText("—")
             vbox.addWidget(time_label)
 
-    def calculate_time_text(self, task):
-        if task.get("is_permanent"):
-            return "П"
-        elif task.get("no_deadline"):
-            created = QDateTime.fromString(task.get("created_at"), "dd.MM.yyyy HH:mm")
-            return f"{created.daysTo(QDateTime.currentDateTime())} д." if created.isValid() else "—"
-        else:
-            deadline = QDateTime.fromString(task.get("deadline"), "dd.MM.yyyy HH:mm")
-            if deadline.isValid():
-                diff = QDateTime.currentDateTime().daysTo(deadline)
-                return f"ост. {diff} д." if diff >= 0 else f"проср. {abs(diff)} д."
-            return "—"
-
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             drag = QDrag(self)
@@ -882,6 +834,7 @@ class ClickOutsideFilter(QObject):
 class AddTaskOverlay(QFrame):
     def __init__(self, parent=None, main_window=None, base_dir=None, task_data=None, status=None):
         super().__init__(parent)
+        self.members_map = {}
         self.responsible_list_visible = False  # флаг видимости
         self.main_window = main_window
         self.base_dir = base_dir
@@ -1198,16 +1151,22 @@ class AddTaskOverlay(QFrame):
                     item.setCheckState(Qt.CheckState.Unchecked)
                     self.responsible_list_widget.addItem(item)
 
-    # Для получения выбранных ответственных (UUID) сделай метод:
-    def get_selected_responsibles(self):
-        selected_ids = []
-        for i in range(self.responsible_list_widget.count()):
-            item = self.responsible_list_widget.item(i)
-            if item.checkState() == Qt.CheckState.Checked:
-                selected_ids.append(item.data(Qt.ItemDataRole.UserRole))
-        return selected_ids
-
     def get_selected_responsible_ids(self):
+        json_path = os.path.join(base_dir, "db/members.json")
+
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                members = json.load(f)
+                for member in members:
+                    name = member["name"]
+                    member_id = member["id"]
+                    self.members_map[name] = member_id
+
+                    item = QListWidgetItem(name)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                    self.responsible_list_widget.addItem(item)
+
         ids = []
         for i in range(self.responsible_list_widget.count()):
             item = self.responsible_list_widget.item(i)
