@@ -4,8 +4,10 @@ import json
 import uuid
 
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit, QInputDialog,
-    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox, QTextBrowser,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit,
+    QInputDialog,
+    QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox,
+    QTextBrowser,
     QListWidget, QToolButton, QListWidgetItem, QSpinBox
 )
 from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMouseEvent
@@ -212,7 +214,6 @@ class MainWindow(QWidget):
         )
         self.settings_panel.setGeometry(self.width(), 0, 300, self.height())
         self.panel_visible = False
-
 
     def refresh_members_list(self):
         # Очистить старые элементы
@@ -557,7 +558,8 @@ class MainWindow(QWidget):
         self.add_member_overlay.show_overlay()
 
     def open_edit_task(self, task_data, status):
-        self.add_task_overlay = AddTaskOverlay(parent=self, main_window=self, base_dir=base_dir, task_data=task_data, status=status)
+        self.add_task_overlay = AddTaskOverlay(parent=self, main_window=self, base_dir=base_dir, task_data=task_data,
+                                               status=status)
         self.add_task_overlay.show()
 
 
@@ -650,7 +652,8 @@ class TaskCard(QFrame):
             drag.exec(Qt.DropAction.MoveAction)
 
     def mouseDoubleClickEvent(self, event):
-        dialog = TaskInfoDialog(task_data=self.task_data, parent=self.main_window, on_edit_callback=self.on_edit_callback, status=self.panel_title)
+        dialog = TaskInfoDialog(task_data=self.task_data, parent=self.main_window,
+                                on_edit_callback=self.on_edit_callback, status=self.panel_title)
         dialog.exec()
 
 
@@ -684,7 +687,8 @@ class TaskPanel(QFrame):
             event.acceptProposedAction()
 
     def add_task(self, task_data):
-        card = TaskCard(task_data, main_window=self.main_window, panel_title=self.status, on_edit_callback=self.on_edit_callback)
+        card = TaskCard(task_data, main_window=self.main_window, panel_title=self.status,
+                        on_edit_callback=self.on_edit_callback)
         self.layout.insertWidget(self.layout.count() - 1, card)
 
 
@@ -1219,9 +1223,9 @@ class AddTaskOverlay(QFrame):
     def create_new_task(self):
         task_name = self.task_name_input.text().strip()
 
-        # 1. Проверка на пустое имя
+        # 1. Проверка на пустое название
         if not task_name:
-            QMessageBox.warning(self, "Ошибка", "Имя задания обязательно!")
+            QMessageBox.warning(self, "Ошибка", "Название задания обязательно!")
             return
 
         # 2. Проверка на оба чекбокса
@@ -1252,6 +1256,7 @@ class AddTaskOverlay(QFrame):
                 if not any(task.get("id") == new_id for file_path in all_task_files if os.path.exists(file_path)
                            for task in json.load(open(file_path, "r", encoding="utf-8"))):
                     return new_id
+
         new_task_id = generate_unique_id()
 
         # 5. Загружаем существующие задания
@@ -1261,12 +1266,13 @@ class AddTaskOverlay(QFrame):
             with open(tasks_path, "r", encoding="utf-8") as f:
                 tasks = json.load(f)
 
-        # 6. Формируем данные задания
+        # 6. Проверка на отсутствие ответственных
         responsible_ids = self.get_selected_responsible_ids()
         if not responsible_ids:
             QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного ответственного!")
             return
 
+        # 7. Формирование задания
         task_data = {
             "id": new_task_id,
             "name": task_name,
@@ -1294,14 +1300,39 @@ class AddTaskOverlay(QFrame):
         self.close_overlay()
 
     def save_task(self):
+        task_name = self.task_name_input.text().strip()
         responsible_ids = []
+
+        # 1. Проверка на отсутствие ответственных
         for i in range(self.responsible_list_widget.count()):
             item = self.responsible_list_widget.item(i)
             if item.checkState() == Qt.CheckState.Checked:
                 responsible_ids.append(item.data(Qt.ItemDataRole.UserRole))
+        if not responsible_ids:
+            QMessageBox.warning(self, "Ошибка", "У заданий должен быть ответственный!")
+            return
 
-        # Обновляем данные
-        self.task_data["name"] = self.task_name_input.text().strip()
+        # 2. Проверка на пустое название
+        if not task_name:
+            QMessageBox.warning(self, "Ошибка", "Название задания обязательно!")
+            return
+
+        # 3. Проверка на оба чекбокса
+        if self.permanent_checkbox.isChecked() and self.no_deadline_checkbox.isChecked():
+            QMessageBox.warning(self, "Ошибка",
+                                "Нельзя одновременно выбрать 'Постоянное задание' и 'Задание без дедлайна'.")
+            return
+
+        # 4. Проверка на дедлайн >= дата создания (только если поля активны)
+        if not self.permanent_checkbox.isChecked() and not self.no_deadline_checkbox.isChecked():
+            created_dt = self.created_at_edit.dateTime()
+            deadline_dt = self.deadline_edit.dateTime()
+            if deadline_dt < created_dt:
+                QMessageBox.warning(self, "Ошибка", "Дедлайн не может быть раньше даты создания.")
+                return
+
+        # 5. Обновляем данные
+        self.task_data["name"] = task_name
         self.task_data["description"] = self.task_description.toHtml()
         self.task_data["responsible"] = responsible_ids
         self.task_data["is_permanent"] = self.permanent_checkbox.isChecked()
@@ -1312,7 +1343,7 @@ class AddTaskOverlay(QFrame):
             "deadline"] = None if self.no_deadline_checkbox.isChecked() or self.permanent_checkbox.isChecked() \
             else self.deadline_edit.dateTime().toString("dd.MM.yyyy HH:mm")
 
-        # Сохраняем изменения в файле
+        # 6. Сохраняем изменения в файле
         file_path = os.path.join(self.base_dir, f"db/tasks/{self.file}")
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
