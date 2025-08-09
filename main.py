@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import uuid
+import shutil
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QDialog, QTextEdit, QDateTimeEdit,
@@ -26,10 +27,25 @@ class MainWindow(QWidget):
 
         # --- Загружаем сохранённый фон ---
         self.settings = QSettings("27UVS", "DelegTaApp")
-        saved_path = self.settings.value("background_path", os.path.join(base_dir, "background.jpg"))
+
+        # Папка для хранения фона
+        background_dir = os.path.join(base_dir, "db", "images", "background")
+        os.makedirs(background_dir, exist_ok=True)
+
+        # Путь к файлу фона (по умолчанию background.jpg)
+        saved_path = self.settings.value("background_path", os.path.join(background_dir, "background.jpg"))
         if not isinstance(saved_path, str):
             saved_path = str(saved_path)
-        self.bg_path = saved_path if os.path.exists(saved_path) else os.path.join(base_dir, "background.jpg")
+
+        # Если файла нет — используем дефолт и копируем его
+        if not os.path.exists(saved_path):
+            default_path = os.path.join(base_dir, "background.jpg")
+            target_path = os.path.join(background_dir, "background.jpg")
+            if os.path.exists(default_path):
+                shutil.copy(default_path, target_path)
+            saved_path = target_path
+
+        self.bg_path = saved_path
 
         # --- Фон ---
         self.bg_label = QLabel(self)
@@ -521,14 +537,41 @@ class MainWindow(QWidget):
         self.panel_visible = not self.panel_visible
 
     def change_background(self):
-        """Выбор нового фона"""
-        file_name, _ = QFileDialog.getOpenFileName(self, "Выберите фон", "", "Изображения (*.png *.jpg *.jpeg)")
-        if file_name:
-            self.bg_pixmap = QPixmap(file_name)
-            self.bg_label.setPixmap(self.bg_pixmap)
-            self.bg_path = file_name
-            self.settings.setValue("background_path", file_name)
-            self.resizeEvent(None)
+        """Выбор нового фона и сохранение его в db/images/background"""
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите фон",
+            "",
+            "Изображения (*.png *.jpg *.jpeg)"
+        )
+
+        if not file_name:
+            return  # Ничего не выбрали
+
+        # Папка, куда будем сохранять фон
+        background_dir = os.path.join("db", "images", "background")
+        os.makedirs(background_dir, exist_ok=True)
+
+        # Путь к файлу фона внутри приложения
+        background_path = os.path.join(background_dir, "background" + os.path.splitext(file_name)[1])
+
+        # Если старый фон есть — удаляем
+        if os.path.exists(background_path):
+            os.remove(background_path)
+
+        # Копируем новый файл
+        shutil.copyfile(file_name, background_path)
+
+        # Загружаем фон в приложение
+        self.bg_pixmap = QPixmap(background_path)
+        self.bg_label.setPixmap(self.bg_pixmap)
+
+        # Сохраняем путь (относительный, чтобы не зависеть от ПК)
+        self.bg_path = background_path
+        self.settings.setValue("background_path", background_path)
+
+        # Обновляем интерфейс
+        self.resizeEvent(None)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
