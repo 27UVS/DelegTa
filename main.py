@@ -15,7 +15,10 @@ from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMous
 from PySide6.QtCore import (Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData,
                             QEvent, QPoint, QObject)
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):  # Если запущено как exe
+    base_dir = os.path.dirname(sys.executable)
+else:  # Если запущено как .py
+    base_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 class MainWindow(QWidget):
@@ -23,7 +26,7 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle("DelegTa")
         self.setWindowIcon(QIcon(os.path.join(base_dir, "db/images/interface/icon.png")))
-        self.json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
+        self.json_path = os.path.join(base_dir, "db/members.json")
 
         # --- Загружаем сохранённый фон ---
         self.settings = QSettings("27UVS", "DelegTaApp")
@@ -36,14 +39,6 @@ class MainWindow(QWidget):
         saved_path = self.settings.value("background_path", os.path.join(background_dir, "background.jpg"))
         if not isinstance(saved_path, str):
             saved_path = str(saved_path)
-
-        # Если файла нет — используем дефолт и копируем его
-        if not os.path.exists(saved_path):
-            default_path = os.path.join(base_dir, "background.jpg")
-            target_path = os.path.join(background_dir, "background.jpg")
-            if os.path.exists(default_path):
-                shutil.copy(default_path, target_path)
-            saved_path = target_path
 
         self.bg_path = saved_path
 
@@ -238,7 +233,7 @@ class MainWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
-        json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
+        json_path = os.path.join(base_dir, "db/members.json")
         if not os.path.exists(json_path):
             return
 
@@ -1630,11 +1625,11 @@ class AddMemberOverlay(QFrame):
         layout.addWidget(self.panel)
 
         self.avatar_path = None  # путь к аватару
-        self.json_path = os.path.join(os.path.dirname(__file__), "db/members.json")
+        self.json_path = os.path.join(base_dir, "db/members.json")
 
     def load_positions(self):
         self.post_combo.clear()  # Очистка списка перед обновлением
-        json_path = os.path.join(os.path.dirname(__file__), "db/positions.json")
+        json_path = os.path.join(base_dir, "db/positions.json")
         if os.path.exists(json_path):
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f).get("positions", [])

@@ -27,4 +27,4 @@ cscript //nologo "%VBS%"
 del "%VBS%"
 
 echo Ярлык DelegTa.lnk создан.
-pause
+exit
