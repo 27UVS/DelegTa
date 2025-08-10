@@ -1616,7 +1616,7 @@ class AddMemberOverlay(QFrame):
         self.avatar_preview = QLabel("Нет аватара")
         self.avatar_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.avatar_preview.setFixedSize(120, 120)
-        self.avatar_preview.setStyleSheet("border: 1px solid #ccc; background-color: #f5f5f5; color: white;")
+        self.avatar_preview.setStyleSheet("border: 1px solid #ccc; background-color: #f5f5f5; color: black;")
         panel_layout.addWidget(self.avatar_preview, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # --- Имя ---
@@ -1693,9 +1693,16 @@ class AddMemberOverlay(QFrame):
     def select_avatar(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Выберите аватар", "", "Изображения (*.png *.jpg *.jpeg)")
         if file_name:
-            self.avatar_path = file_name
-            pixmap = QPixmap(file_name).scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
-                                               Qt.TransformationMode.SmoothTransformation)
+            # Папка для хранения аватаров внутри проекта
+            images_dir = os.path.join(base_dir, "db", "images", "members")
+            os.makedirs(images_dir, exist_ok=True)
+            ext = os.path.splitext(file_name)[1].lower()  # расширение файла
+            new_filename = f"{uuid.uuid4()}{ext}"
+            new_path = os.path.join(images_dir, new_filename)
+            shutil.copy2(file_name, new_path)
+            self.avatar_path = new_path
+            pixmap = QPixmap(new_path).scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
+                                              Qt.TransformationMode.SmoothTransformation)
             self.avatar_preview.setPixmap(pixmap)
 
     def save_member(self):
