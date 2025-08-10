@@ -5,5 +5,6 @@ color.png - https://www.flaticon.com/ru/free-icon/watercolor_6651740
 edit.png - https://www.flaticon.com/ru/free-icon/pen_1659764
 delete.png - https://www.flaticon.com/ru/free-icon/delete_709518
 link.png - https://www.flaticon.com/ru/free-icon/link_154613
+filter.png - https://www.flaticon.com/ru/free-icon/filter_2676818
 
 icon.png and icon_small.png by https://vk.com/forgottenandunknownman

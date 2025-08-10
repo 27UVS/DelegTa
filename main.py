@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QFileDialog, QFrame, QLineEdit, QMessageBox, QScrollArea, QColorDialog, QComboBox, QSizePolicy, QCheckBox,
     QTextBrowser,
-    QListWidget, QToolButton, QListWidgetItem, QSpinBox
+    QListWidget, QToolButton, QListWidgetItem, QSpinBox, QMenu
 )
 from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMouseEvent
 from PySide6.QtCore import (Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData,
@@ -84,6 +84,39 @@ class MainWindow(QWidget):
         title_label.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
         header_layout.addWidget(title_label)
 
+        header_layout.addStretch()
+
+        # Кнопка фильтра
+        btn_filter_icon = os.path.join(base_dir, "db/images/interface/filter.png")
+        self.filter_mode = "none"  # none, free, busy
+
+        self.filter_btn = QToolButton()
+        self.filter_btn.setIcon(QIcon(btn_filter_icon))
+        self.filter_btn.setIconSize(QSize(30, 30))
+        self.filter_btn.setFixedSize(40, 40)
+        self.filter_btn.setStyleSheet("""
+            background-color: #444;
+            border-radius: 20px;
+            border: none;
+            padding: 0;
+        """)
+
+        # Выпадающее меню
+        filter_menu = QMenu(self)
+        filter_menu.setStyleSheet("background-color: #333; color: white; font-size: 14px;")
+
+        filter_menu.addAction("Без фильтров", lambda: self.set_filter_mode("none"))
+        filter_menu.addAction("Наиболее свободные", lambda: self.set_filter_mode("free"))
+        filter_menu.addAction("Наиболее занятые", lambda: self.set_filter_mode("busy"))
+        filter_menu.addAction("Доступные", lambda: self.set_filter_mode("access"))
+        filter_menu.addAction("С неизвестным статусом", lambda: self.set_filter_mode("unknown"))
+        filter_menu.addAction("Не могут работать", lambda: self.set_filter_mode("no-work"))
+
+        self.filter_btn.setMenu(filter_menu)
+        self.filter_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+        header_layout.addWidget(self.filter_btn)
+
         # Кнопка добавления участника
         btn_add = os.path.join(base_dir, "db/images/interface/add.png")
         self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir,
@@ -98,7 +131,6 @@ class MainWindow(QWidget):
             border: none;
         """)
         self.add_member_btn.clicked.connect(self.add_member_overlay.show_overlay)
-        header_layout.addStretch()
         header_layout.addWidget(self.add_member_btn)
 
         members_layout.addLayout(header_layout)
@@ -240,7 +272,7 @@ class MainWindow(QWidget):
         with open(json_path, "r", encoding="utf-8") as f:
             members = json.load(f)
 
-        members = self.sort_members_by_post(members)
+        members = self.sort_members_by_post(members, self.filter_mode)
 
         for member in members:
             block = self.create_member_block(member)
@@ -248,7 +280,7 @@ class MainWindow(QWidget):
         # self.members_container_layout.addStretch()
 
     @staticmethod
-    def sort_members_by_post(members):
+    def sort_members_by_post(members, filter="none"):
         positions_path = os.path.join(base_dir, "db/positions.json")
         if os.path.exists(positions_path):
             with open(positions_path, "r", encoding="utf-8") as f:
@@ -256,14 +288,36 @@ class MainWindow(QWidget):
         else:
             positions = []
 
-        # Формируем словарь {должность: приоритет}
         priority_map = {pos["name"]: pos.get("priority", 9999) for pos in positions}
+        status_map = {
+            "access": "Доступен",
+            "unknown": "Неизвестно",
+            "no-work": "Занят"
+        }
 
-        def get_priority(member):
-            post = member.get("post", "")
-            return priority_map.get(post, 9999)
+        # Если фильтр по статусу - отфильтровать список участников
+        if filter in status_map:
+            target_status = status_map[filter]
+            members = [m for m in members if m.get("status") == target_status]
 
-        return sorted(members, key=get_priority)
+        def sort_key(member):
+            post_priority = priority_map.get(member.get("post", ""), 9999)
+            task_count = member.get("tasks", 0)
+
+            # При фильтре "free" и "busy" сортируем с учётом задач,
+            # иначе только по приоритету
+            if filter == "free":
+                return post_priority, task_count
+            elif filter == "busy":
+                return post_priority, -task_count
+            else:
+                return post_priority, 0
+
+        return sorted(members, key=sort_key)
+
+    def set_filter_mode(self, mode):
+        self.filter_mode = mode
+        self.refresh_members_list()
 
     def create_member_block(self, member):
         block = QFrame()
