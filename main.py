@@ -1780,10 +1780,11 @@ class AddMemberOverlay(QFrame):
         with open(self.json_path, "w", encoding="utf-8") as f:
             json.dump(members, f, ensure_ascii=False, indent=4)
 
-        # Обновляем панель участников
+        # Обновляем данные
         if self.main_window and hasattr(self.main_window, "refresh_members_list"):
             self.main_window.update_members_tasks_count()
             self.main_window.refresh_members_list()
+            self.main_window.load_tasks_into_panels()
 
         # Очищаем поля
         self.clear_form()
