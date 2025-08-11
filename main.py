@@ -706,33 +706,49 @@ class TaskCard(QFrame):
         resp_label.setWordWrap(True)
         resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         vbox.addWidget(resp_label)
+
         # --- Время задания ---
         if self.panel_title != "Завершено":
+            now = QDateTime.currentDateTime()
             time_label = QLabel()
+
             if self.task_data.get("is_permanent"):
                 time_label.setText("П")
                 time_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
+
             elif self.task_data.get("no_deadline"):
                 created_date = QDateTime.fromString(self.task_data.get("created_at"), "dd.MM.yyyy HH:mm")
                 if created_date.isValid():
-                    days = created_date.daysTo(QDateTime.currentDateTime())
-                    time_label.setText(f"{days} д.")
-                    time_label.setStyleSheet("font-size: 14px; color: gray;")
-                else:
-                    time_label.setText("—")
-            else:
-                deadline = QDateTime.fromString(self.task_data.get("deadline"), "dd.MM.yyyy HH:mm")
-                now = QDateTime.currentDateTime()
-                if deadline.isValid():
-                    days_diff = now.daysTo(deadline)
-                    if days_diff >= 0:
-                        time_label.setText(f"ост. {days_diff} д.")
-                        time_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
+                    if now < created_date:
+                        days_until_start = now.daysTo(created_date)
+                        time_label.setText(f"до начала {abs(days_until_start)} д.")
+                        time_label.setStyleSheet("font-size: 14px; color: orange; font-weight: bold;")
                     else:
-                        time_label.setText(f"проср. {abs(days_diff)} д.")
-                        time_label.setStyleSheet("font-size: 14px; color: red; font-weight: bold;")
+                        days = created_date.daysTo(now)
+                        time_label.setText(f"{days} д.")
+                        time_label.setStyleSheet("font-size: 14px; color: gray;")
                 else:
                     time_label.setText("—")
+
+            else:
+                created_date = QDateTime.fromString(self.task_data.get("created_at"), "dd.MM.yyyy HH:mm")
+                if created_date.isValid():
+                    if now < created_date:
+                        days_until_start = now.daysTo(created_date)
+                        time_label.setText(f"до начала {abs(days_until_start)} д.")
+                        time_label.setStyleSheet("font-size: 14px; color: orange; font-weight: bold;")
+                    else:
+                        deadline = QDateTime.fromString(self.task_data.get("deadline"), "dd.MM.yyyy HH:mm")
+                        if deadline.isValid():
+                            days_diff = now.daysTo(deadline)
+                            if days_diff >= 0:
+                                time_label.setText(f"ост. {days_diff} д.")
+                                time_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
+                            else:
+                                time_label.setText(f"проср. {abs(days_diff)} д.")
+                                time_label.setStyleSheet("font-size: 14px; color: red; font-weight: bold;")
+                        else:
+                            time_label.setText("—")
             vbox.addWidget(time_label)
 
     def mousePressEvent(self, event):
