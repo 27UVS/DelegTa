@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QTextBrowser,
     QListWidget, QToolButton, QListWidgetItem, QSpinBox, QMenu
 )
-from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMouseEvent
+from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMouseEvent, QGuiApplication
 from PySide6.QtCore import (Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData,
                             QEvent, QPoint, QObject)
 
@@ -857,7 +857,7 @@ class TaskInfoDialog(QDialog):
             deadline_label.hide()
         else:
             created = task_data.get("created_at", "—")
-            created_label.setText(f"Создана: {created}")
+            created_label.setText(f"Дата начала: {created}")
             if not task_data.get("no_deadline"):
                 deadline_label.setText(f"Дедлайн: {task_data.get('deadline', '—')}")
             else:
@@ -1075,7 +1075,7 @@ class AddTaskOverlay(QFrame):
         """
 
         # Время создания
-        date_start_label = QLabel("Дата создания")
+        date_start_label = QLabel("Дата начала")
         date_start_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.created_at_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.created_at_edit.setDisplayFormat("dd.MM.yyyy HH:mm")
@@ -1480,6 +1480,7 @@ class MemberInfoDialog(QDialog):
     def __init__(self, main_window, member, on_edit_callback=None):
         super().__init__()
         self.main_window = main_window
+        self.setWindowIcon(main_window.windowIcon())
         self.setWindowTitle("Информация об участнике")
         self.setModal(True)
         self.setFixedSize(300, 400)
@@ -1536,7 +1537,15 @@ class MemberInfoDialog(QDialog):
                 link_btn = QPushButton(link)
                 link_btn.setStyleSheet("color: #00aaff; text-align: left;")
                 link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                link_btn.clicked.connect(lambda _, l=link: QDesktopServices.openUrl(QUrl(l)))
+
+                def handle_link_click(link_str=link):
+                    # Копируем в буфер обмена
+                    QGuiApplication.clipboard().setText(link_str)
+                    # Открываем в браузере
+                    QDesktopServices.openUrl(QUrl(link_str))
+
+                # Важно: clicked без передачи аргументов
+                link_btn.clicked.connect(lambda checked=False, l=link: handle_link_click(l))
                 layout.addWidget(link_btn)
 
         layout.addStretch()
