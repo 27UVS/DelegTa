@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap, QIcon, QColor, QDesktopServices, QDrag, QMouseEvent, QGuiApplication
 from PySide6.QtCore import (Qt, QPropertyAnimation, QRect, QSettings, QSize, QEasingCurve, QUrl, QDateTime, QMimeData,
-                            QEvent, QPoint, QObject)
+                            QEvent, QPoint, QObject, QTimer)
 
 if getattr(sys, 'frozen', False):  # Если запущено как exe
     base_dir = os.path.dirname(sys.executable)
@@ -34,6 +34,11 @@ class MainWindow(QWidget):
         # Папка для хранения фона
         background_dir = os.path.join(base_dir, "db", "images", "background")
         os.makedirs(background_dir, exist_ok=True)
+
+        # Таймер на обновление времени
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.update_task_times)
+        self.update_timer.start(5 * 60 * 1000)  # каждые 5 минут
 
         # Путь к файлу фона (по умолчанию background.jpg)
         saved_path = self.settings.value("background_path", os.path.join(background_dir, "background.jpg"))
@@ -256,7 +261,13 @@ class MainWindow(QWidget):
             on_edit_positions=EditPositionsOverlay(parent=self, main_window=self).show_overlay
         )
         self.settings_panel.setGeometry(self.width(), 0, 300, self.height())
+        self.update_task_times()
         self.panel_visible = False
+
+    def update_task_times(self):
+        for panel in getattr(self, "columns", []):
+            if hasattr(panel, "update_cards_time"):
+                panel.update_cards_time()
 
     def refresh_members_list(self):
         # Очистить старые элементы
@@ -707,49 +718,64 @@ class TaskCard(QFrame):
         resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         vbox.addWidget(resp_label)
 
-        # --- Время задания ---
-        if self.panel_title != "Завершено":
-            now = QDateTime.currentDateTime()
-            time_label = QLabel()
+        self.time_label = QLabel()
+        vbox.addWidget(self.time_label)
 
-            if self.task_data.get("is_permanent"):
-                time_label.setText("П")
-                time_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
+        self.update_time_display()
 
-            elif self.task_data.get("no_deadline"):
-                created_date = QDateTime.fromString(self.task_data.get("created_at"), "dd.MM.yyyy HH:mm")
-                if created_date.isValid():
-                    if now < created_date:
-                        days_until_start = now.daysTo(created_date)
-                        time_label.setText(f"до начала {abs(days_until_start)} д.")
-                        time_label.setStyleSheet("font-size: 14px; color: orange; font-weight: bold;")
-                    else:
-                        days = created_date.daysTo(now)
-                        time_label.setText(f"{days} д.")
-                        time_label.setStyleSheet("font-size: 14px; color: gray;")
+    def update_time_display(self):
+        # Если панель "Завершено" — скрываем/не показываем время
+        if self.panel_title == "Завершено":
+            self.time_label.hide()
+            return
+        else:
+            self.time_label.show()
+
+        now = QDateTime.currentDateTime()
+
+        # Постоянное задание
+        if self.task_data.get("is_permanent"):
+            self.time_label.setText("П")
+            self.time_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
+            return
+
+        # Задание без дедлайна
+        elif self.task_data.get("no_deadline"):
+            created_date = QDateTime.fromString(self.task_data.get("created_at"), "dd.MM.yyyy HH:mm")
+            if created_date.isValid():
+                if now < created_date:
+                    days_until_start = now.daysTo(created_date)
+                    self.time_label.setText(f"до начала {abs(days_until_start)} д.")
+                    self.time_label.setStyleSheet("font-size: 14px; color: orange; font-weight: bold;")
                 else:
-                    time_label.setText("—")
-
+                    days = created_date.daysTo(now)
+                    self.time_label.setText(f"{days} д.")
+                    self.time_label.setStyleSheet("font-size: 14px; color: gray;")
             else:
-                created_date = QDateTime.fromString(self.task_data.get("created_at"), "dd.MM.yyyy HH:mm")
-                if created_date.isValid():
-                    if now < created_date:
-                        days_until_start = now.daysTo(created_date)
-                        time_label.setText(f"до начала {abs(days_until_start)} д.")
-                        time_label.setStyleSheet("font-size: 14px; color: orange; font-weight: bold;")
-                    else:
-                        deadline = QDateTime.fromString(self.task_data.get("deadline"), "dd.MM.yyyy HH:mm")
-                        if deadline.isValid():
-                            days_diff = now.daysTo(deadline)
-                            if days_diff >= 0:
-                                time_label.setText(f"ост. {days_diff} д.")
-                                time_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
-                            else:
-                                time_label.setText(f"проср. {abs(days_diff)} д.")
-                                time_label.setStyleSheet("font-size: 14px; color: red; font-weight: bold;")
+                self.time_label.setText("—")
+            return
+
+        # Задание с периодом времени
+        else:
+            created_date = QDateTime.fromString(self.task_data.get("created_at"), "dd.MM.yyyy HH:mm")
+            if created_date.isValid():
+                if now < created_date:
+                    days_until_start = now.daysTo(created_date)
+                    self.time_label.setText(f"до начала {abs(days_until_start)} д.")
+                    self.time_label.setStyleSheet("font-size: 14px; color: orange; font-weight: bold;")
+                else:
+                    deadline = QDateTime.fromString(self.task_data.get("deadline"), "dd.MM.yyyy HH:mm")
+                    if deadline.isValid():
+                        days_diff = now.daysTo(deadline)
+                        if days_diff >= 0:
+                            self.time_label.setText(f"ост. {days_diff} д.")
+                            self.time_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
                         else:
-                            time_label.setText("—")
-            vbox.addWidget(time_label)
+                            self.time_label.setText(f"проср. {abs(days_diff)} д.")
+                            self.time_label.setStyleSheet("font-size: 14px; color: red; font-weight: bold;")
+                    else:
+                        self.time_label.setText("—")
+            return
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -798,6 +824,16 @@ class TaskPanel(QFrame):
         card = TaskCard(task_data, main_window=self.main_window, panel_title=self.status,
                         on_edit_callback=self.on_edit_callback)
         self.layout.insertWidget(self.layout.count() - 1, card)
+
+    def update_cards_time(self):
+        # пробегаем по виджетам в layout и обновляем время у TaskCard
+        for i in range(self.layout.count()):
+            item = self.layout.itemAt(i)
+            if not item:
+                continue
+            w = item.widget()
+            if w and isinstance(w, TaskCard):
+                w.update_time_display()
 
 
 class TaskInfoDialog(QDialog):
