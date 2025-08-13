@@ -311,10 +311,15 @@ class MainWindow(QWidget):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Выберите участников")
-        layout = QVBoxLayout(dialog)
+        dialog_layout = QVBoxLayout(dialog)
 
         # Достаём прошлый выбор (если был)
         prev_selected = self.selected_members_by_status.get(status, set())
+
+        # Контейнер с чекбоксами
+        checkbox_container = QWidget()
+        checkbox_layout = QVBoxLayout(checkbox_container)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)
 
         checkboxes = []
         for m in members:
@@ -322,11 +327,20 @@ class MainWindow(QWidget):
             cb.member_id = m["id"]
             if m["id"] in prev_selected:
                 cb.setChecked(True)
-            layout.addWidget(cb)
+            checkbox_layout.addWidget(cb)
             checkboxes.append(cb)
 
+        # Оборачиваем контейнер в скролл
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(checkbox_container)
+        scroll.setFixedHeight(300)  # ограничение по высоте, чтобы не расползалось окно
+
+        dialog_layout.addWidget(scroll)
+
+        # Кнопка применить
         btn_apply = QPushButton("Применить")
-        layout.addWidget(btn_apply)
+        dialog_layout.addWidget(btn_apply)
 
         def apply_selection():
             selected_ids = {cb.member_id for cb in checkboxes if cb.isChecked()}
