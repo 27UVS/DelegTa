@@ -27,6 +27,7 @@ class MainWindow(QWidget):
         self.setWindowTitle("DelegTa")
         self.setWindowIcon(QIcon(os.path.join(base_dir, "db/images/interface/icon.png")))
         self.json_path = os.path.join(base_dir, "db/members.json")
+        self.selected_members_by_status = {}
 
         # --- Загружаем сохранённый фон ---
         self.settings = QSettings("27UVS", "DelegTaApp")
@@ -214,6 +215,34 @@ class MainWindow(QWidget):
                 """)
                 add_task_btn.clicked.connect(self.show_add_task_overlay)
                 header_layout.addWidget(add_task_btn)
+            else:
+                # Кнопка фильтра
+                filter_btn = QToolButton()
+                filter_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/filter.png")))
+                filter_btn.setIconSize(QSize(24, 24))
+                filter_btn.setFixedSize(30, 30)
+                filter_btn.setStyleSheet("""
+                    background-color: #828282;
+                    color: white;
+                    font-size: 18px;
+                    font-weight: bold;
+                    border: none;
+                    border-radius: 14px;
+                """)
+
+                menu = QMenu(self)
+                menu.setStyleSheet("background-color: #333; color: white; font-size: 14px;")
+                menu.addAction("Сортировка по участникам", lambda t=title: self.show_members_filter_dialog(t))
+                menu.addAction("Задачи с дедлайном", lambda t=title: self.apply_task_filter(t, "with_deadline"))
+                menu.addAction("Задачи без дедлайна", lambda t=title: self.apply_task_filter(t, "no_deadline"))
+                menu.addAction("Постоянные задачи", lambda t=title: self.apply_task_filter(t, "permanent"))
+                menu.addAction("Длительные задачи", lambda t=title: self.apply_task_filter(t, "long"))
+                menu.addAction("Недавние задачи", lambda t=title: self.apply_task_filter(t, "recent"))
+                menu.addAction("Сбросить фильтр", lambda t=title: self.apply_task_filter(t, None))
+
+                filter_btn.setMenu(menu)
+                filter_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+                header_layout.addWidget(filter_btn)
 
             header_frame = QFrame()
             header_frame.setLayout(header_layout)
@@ -268,6 +297,51 @@ class MainWindow(QWidget):
         for panel in getattr(self, "columns", []):
             if hasattr(panel, "update_cards_time"):
                 panel.update_cards_time()
+
+    def apply_task_filter(self, status, filter_type):
+        for panel in self.columns:
+            if panel.status == status:
+                panel.apply_filter(filter_type)
+                break
+
+    def show_members_filter_dialog(self, status):
+        # Загружаем список участников
+        with open(os.path.join(base_dir, "db/members.json"), "r", encoding="utf-8") as f:
+            members = json.load(f)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Выберите участников")
+        layout = QVBoxLayout(dialog)
+
+        # Достаём прошлый выбор (если был)
+        prev_selected = self.selected_members_by_status.get(status, set())
+
+        checkboxes = []
+        for m in members:
+            cb = QCheckBox(m["name"])
+            cb.member_id = m["id"]
+            if m["id"] in prev_selected:
+                cb.setChecked(True)
+            layout.addWidget(cb)
+            checkboxes.append(cb)
+
+        btn_apply = QPushButton("Применить")
+        layout.addWidget(btn_apply)
+
+        def apply_selection():
+            selected_ids = {cb.member_id for cb in checkboxes if cb.isChecked()}
+            # Запоминаем выбор
+            self.selected_members_by_status[status] = selected_ids
+
+            if selected_ids:
+                self.apply_task_filter(status, ("by_members", selected_ids))
+            else:
+                # Если пусто — сброс фильтра
+                self.apply_task_filter(status, None)
+            dialog.accept()
+
+        btn_apply.clicked.connect(apply_selection)
+        dialog.exec()
 
     def refresh_members_list(self):
         # Очистить старые элементы
@@ -806,6 +880,9 @@ class TaskPanel(QFrame):
         self.layout = QVBoxLayout(self)
         self.layout.addStretch()
 
+        # Снимок исходного порядка карточек (None, пока не сортировали)
+        self._original_order = None
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
             event.acceptProposedAction()
@@ -834,6 +911,79 @@ class TaskPanel(QFrame):
             w = item.widget()
             if w and isinstance(w, TaskCard):
                 w.update_time_display()
+
+    # --- вспомогательные функции ---
+    def _iter_cards(self):
+        for i in range(self.layout.count()):
+            item = self.layout.itemAt(i)
+            if not item:
+                continue
+            w = item.widget()
+            if w and isinstance(w, TaskCard):
+                yield w
+
+    def _current_cards(self):
+        return list(self._iter_cards())
+
+    def _rebuild_in_order(self, cards_in_order):
+        # удаляем и вставляем заново (перед stretch)
+        for c in cards_in_order:
+            self.layout.removeWidget(c)
+        for c in cards_in_order:
+            self.layout.insertWidget(self.layout.count() - 1, c)
+
+    def apply_filter(self, filter_type):
+        now = QDateTime.currentDateTime()
+
+        def parse_datetime(date_str):
+            s = date_str or ""
+            dt = QDateTime.fromString(s, "dd.MM.yyyy HH:mm")
+            return dt if dt.isValid() else now
+
+        cards = self._current_cards()
+
+        # --- сброс фильтра ---
+        if not filter_type:
+            for card in cards:
+                card.show()
+            if self._original_order:
+                order = [c for c in self._original_order if c in cards]
+                self._rebuild_in_order(order)
+                self._original_order = None
+            return
+
+        filtered_cards = cards
+
+        # --- фильтры ---
+        if filter_type == "with_deadline":
+            filtered_cards = [
+                c for c in cards
+                if not bool(c.task_data.get("no_deadline", False))
+                   and not bool(c.task_data.get("is_permanent", False))
+            ]
+        elif filter_type == "no_deadline":
+            filtered_cards = [c for c in cards if bool(c.task_data.get("no_deadline", False))]
+        elif filter_type == "permanent":
+            filtered_cards = [c for c in cards if bool(c.task_data.get("is_permanent", False))]
+        elif filter_type in ("long", "recent"):
+            if self._original_order is None:
+                self._original_order = cards[:]
+            filtered_cards = [c for c in cards if not bool(c.task_data.get("is_permanent", False))]
+            filtered_cards.sort(key=lambda c: parse_datetime(c.task_data.get("created_at")),
+                                reverse=(filter_type == "recent"))
+        elif isinstance(filter_type, tuple) and filter_type[0] == "by_members":
+            selected_ids = set(filter_type[1])
+            filtered_cards = [
+                c for c in cards
+                if selected_ids & set(c.task_data.get("responsible", []))
+            ]
+
+        # --- отображение ---
+        for card in cards:
+            card.setVisible(card in filtered_cards)
+
+        if filter_type in ("long", "recent"):
+            self._rebuild_in_order(filtered_cards)
 
 
 class TaskInfoDialog(QDialog):
