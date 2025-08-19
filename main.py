@@ -55,8 +55,8 @@ class MainWindow(QWidget):
         self.bg_label.setPixmap(self.bg_pixmap)
 
         # --- Кнопка настроек ---
-        self.btn_active = QIcon(os.path.join(base_dir, "db/images/interface/settings_active.png"))
-        self.btn_default = QIcon(os.path.join(base_dir, "db/images/interface/settings_default.png"))
+        self.btn_active = QIcon(os.path.join(base_dir, "db/images/interface/settings_active_button.png"))
+        self.btn_default = QIcon(os.path.join(base_dir, "db/images/interface/settings_default_button.png"))
 
         self.settings_btn = HoverButton(self.btn_default, self.btn_active, self)
         self.settings_btn.clicked.connect(self.toggle_settings_panel)
@@ -93,7 +93,7 @@ class MainWindow(QWidget):
         header_layout.addStretch()
 
         # Кнопка фильтра
-        btn_filter_icon = os.path.join(base_dir, "db/images/interface/filter.png")
+        btn_filter_icon = os.path.join(base_dir, "db/images/interface/filter_button.png")
         self.filter_mode = "none"  # none, free, busy
 
         self.filter_btn = QToolButton()
@@ -124,7 +124,7 @@ class MainWindow(QWidget):
         header_layout.addWidget(self.filter_btn)
 
         # Кнопка добавления участника
-        btn_add = os.path.join(base_dir, "db/images/interface/add.png")
+        btn_add = os.path.join(base_dir, "db/images/interface/add_button.png")
         self.add_member_overlay = AddMemberOverlay(self, parent=self, json_path=os.path.join(base_dir,
                                                                                              "db/members.json"))
         self.add_member_btn = QPushButton()
@@ -202,7 +202,7 @@ class MainWindow(QWidget):
             # Кнопка добавления задачи только для "Черновик"
             if title == "Черновик":
                 add_task_btn = QPushButton()
-                add_task_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/add.png")))
+                add_task_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/add_button.png")))
                 add_task_btn.setIconSize(QSize(32, 32))
                 add_task_btn.setFixedSize(30, 30)
                 add_task_btn.setStyleSheet("""
@@ -218,7 +218,7 @@ class MainWindow(QWidget):
             else:
                 # Кнопка фильтра
                 filter_btn = QToolButton()
-                filter_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/filter.png")))
+                filter_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/filter_button.png")))
                 filter_btn.setIconSize(QSize(24, 24))
                 filter_btn.setFixedSize(30, 30)
                 filter_btn.setStyleSheet("""
@@ -1110,7 +1110,7 @@ class TaskInfoDialog(QDialog):
 
         # --- Кнопка редактирования ---
         edit_btn = QPushButton()
-        edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit.png")))
+        edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit_button.png")))
         edit_btn.setIconSize(QSize(20, 20))
         edit_btn.setFixedSize(30, 30)
         edit_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
@@ -1344,7 +1344,7 @@ class AddTaskOverlay(QFrame):
         right_col.addWidget(self.task_description)
 
         link_btn = QPushButton()
-        link_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/link.png")))
+        link_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/link_button.png")))
         link_btn.setIconSize(QSize(40, 40))
         link_btn.setFixedSize(40, 40)
         link_btn.setStyleSheet("border: none;")
@@ -1769,7 +1769,7 @@ class MemberInfoDialog(QDialog):
         # --- Кнопки ---
         btn_layout = QHBoxLayout()
         edit_btn = QPushButton()
-        edit_icon = QIcon(os.path.join(base_dir, "db/images/interface/edit.png"))
+        edit_icon = QIcon(os.path.join(base_dir, "db/images/interface/edit_button.png"))
         edit_btn.setIcon(edit_icon)
         edit_btn.setFixedSize(30, 30)
         edit_btn.setFlat(True)
@@ -2217,7 +2217,7 @@ class EditPositionsOverlay(QFrame):
         self.position_input.setPlaceholderText("Введите должность...")
         self.position_input.setStyleSheet("border: none; font-size: 22px; color: white;")
         add_btn = QPushButton()
-        add_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/add.png")))
+        add_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/add_button.png")))
         add_btn.setIconSize(QSize(30, 30))
         add_btn.setFixedSize(30, 30)
         add_btn.setStyleSheet("border: none;")
@@ -2283,7 +2283,7 @@ class EditPositionsOverlay(QFrame):
 
             # Кнопка выбора цвета
             color_btn = QPushButton()
-            color_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/color.png")))  # Иконка палитры
+            color_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/color_button.png")))  # Иконка палитры
             color_btn.setIconSize(QSize(20, 20))
             color_btn.setFixedSize(30, 30)
             color_btn.setStyleSheet("border: none;")
@@ -2292,7 +2292,7 @@ class EditPositionsOverlay(QFrame):
 
             # Кнопка редактирования
             edit_btn = QPushButton()
-            edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit.png")))
+            edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit_button.png")))
             edit_btn.setIconSize(QSize(20, 20))
             edit_btn.setFixedSize(30, 30)
             edit_btn.setStyleSheet("border: none;")
@@ -2301,7 +2301,7 @@ class EditPositionsOverlay(QFrame):
 
             # Кнопка удаления
             del_btn = QPushButton()
-            del_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/delete.png")))
+            del_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/delete_button.png")))
             del_btn.setIconSize(QSize(20, 20))
             del_btn.setFixedSize(30, 30)
             del_btn.setStyleSheet("border: none;")
