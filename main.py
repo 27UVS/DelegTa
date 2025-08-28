@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import uuid
@@ -773,7 +774,8 @@ class TaskCard(QFrame):
         vbox.setContentsMargins(8, 8, 8, 8)
 
         # --- Название задания ---
-        name_label = QLabel(task_data.get("name", "Без названия"))
+        raw_name = task_data.get("name", "Без названия")
+        name_label = QLabel(soft_wrap_long_words(raw_name, limit=11))
         name_label.setStyleSheet("font-size: 18px; font-weight: bold; color: black;")
         name_label.setWordWrap(True)
         name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -2448,6 +2450,42 @@ class EditPositionsOverlay(QFrame):
 
     def hide_overlay(self):
         self.setVisible(False)
+
+
+def soft_wrap_long_words(text: str, limit: int = 11, break_char: str = "\u200b") -> str:
+    """
+    Вставляет невидимый символ `break_char` (по умолчанию zero-width space U+200B)
+    каждые `limit` непробельных символов в каждом слове, чтобы QLabel мог переносить
+    длинные слитные слова.
+    - limit: количество символов между возможными переносами.
+    - break_char: "\u200b" (zero-width space) или "\u00ad" (soft hyphen) — см. примечание ниже.
+    """
+    if not text:
+        return text
+
+    # Разделяем, чтобы сохранить исходные пробелы (и знаки перевода строки)
+    parts = re.split(r'(\s+)', text)
+
+    # Компилируем паттерн для вставки каждые `limit` символов
+    pattern = re.compile(rf'(\S{{{limit}}})(?=\S)')
+
+    out_parts = []
+    for p in parts:
+        if not p or p.isspace():
+            out_parts.append(p)
+            continue
+        # Используем функцию-замену, чтобы избежать проблем с \u в шаблоне
+        p = pattern.sub(lambda m: m.group(1) + break_char, p)
+        out_parts.append(p)
+
+    return ''.join(out_parts)
+
+
+def strip_soft_wrap_chars(text: str) -> str:
+    """Удаляет невидимые символы переноса, если нужно сохранить/скопировать 'чистый' текст."""
+    if not text:
+        return text
+    return text.replace("\u200b", "").replace("\u00ad", "")
 
 
 def main():
