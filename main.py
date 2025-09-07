@@ -260,14 +260,17 @@ class MainWindow(QWidget):
             # Внутренний TaskPanel (поддерживает drag & drop)
             task_panel = TaskPanel(status=title, main_window=self, on_edit_callback=self.open_edit_task)
             container_widget = QWidget()
+            container_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             container_layout = QVBoxLayout(container_widget)
             container_layout.setContentsMargins(5, 5, 5, 5)
             container_layout.setSpacing(10)
+            container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
             container_layout.addWidget(task_panel)
             scroll_area.setWidget(container_widget)
 
             outer_layout.addWidget(scroll_area)
-            tasks_row.addWidget(outer_frame)
+            tasks_row.addWidget(outer_frame, stretch=1)
 
             # Сохраняем
             self.columns.append(task_panel)
@@ -762,56 +765,69 @@ class TaskCard(QFrame):
         self.main_window = main_window
         self.panel_title = panel_title
         self.on_edit_callback = on_edit_callback
+
+        # --- оформление карточки ---
         self.setStyleSheet("""
             background-color: white;
             border-radius: 10px;
-            padding: 5px;
+            padding: 6px;
         """)
-        self.setFixedWidth(170)
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
 
+        # Важный момент: высота формируется содержимым
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        # --- главный layout ---
         vbox = QVBoxLayout(self)
         vbox.setContentsMargins(8, 8, 8, 8)
+        vbox.setSpacing(4)  # аккуратные отступы между элементами
 
-        # --- Название задания ---
+        # --- Заголовок задания ---
         raw_name = task_data.get("name", "Без названия")
-        name_label = QLabel(soft_wrap_long_words(raw_name, limit=11))
+        name_label = QLabel(raw_name)
         name_label.setStyleSheet("font-size: 18px; font-weight: bold; color: black;")
         name_label.setWordWrap(True)
         name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        name_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+
+        # Лейбл тянется в ширину, а по высоте растёт сам
+        name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
         vbox.addWidget(name_label)
 
-        # --- Ответственные за задание ---
+        # --- Ответственные ---
         responsibles = task_data.get("responsible", [])
-
-        # Поддержка старого формата — если один ID в виде строки
         if isinstance(responsibles, str):
             responsibles = [responsibles]
         elif not isinstance(responsibles, list):
             responsibles = []
 
-        # Получаем имена по ID
         names = []
         for user_id in responsibles:
             member = main_window.get_member_by_id(user_id)
             name = member.get("name", "Неизвестный") if member else "Неизвестный"
             names.append(name)
 
-        # Объединяем имена в строку
         responsible_names_str = ", ".join(names) if names else "Не указано"
 
-        # Отображаем
         resp_label = QLabel(f"Ответственные: {responsible_names_str}")
         resp_label.setStyleSheet("font-size: 16px; color: #333;")
         resp_label.setWordWrap(True)
         resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        resp_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         vbox.addWidget(resp_label)
 
+        # --- Дата/срок ---
         self.time_label = QLabel()
+        self.time_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         vbox.addWidget(self.time_label)
 
         self.update_time_display()
+
+    # --- динамическая подстройка ширины под зону скролла ---
+    def resizeEvent(self, event):
+        if self.parent():
+            parent_width = self.parent().width()
+            self.setFixedWidth(parent_width - 20)
+        super().resizeEvent(event)
 
     def update_time_display(self):
         # Если панель "Завершено" — скрываем/не показываем время
@@ -894,6 +910,8 @@ class TaskPanel(QFrame):
         """)
 
         self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        self.layout.setSpacing(10)
         self.layout.addStretch()
 
         # Снимок исходного порядка карточек (None, пока не сортировали)
