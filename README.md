@@ -13,7 +13,7 @@
 > [!NOTE]
 > Для второго  метода активации программы, на вашем устройстве должен поддерживаться язык программирования Python, быть доступен через PATH и быть в наличии библиотека PySide6. В противником случае `start_delegation_tasks.bat` выполнит самостоятельно установку.
 ### Условия использования
-В обоих случаях необходимо, чтобы исходный файл программы находился одной директории с папкой `db`, отвечающая за хранение всех необходимых файлов. Если вы используете .exe версию программы, необходимо также наличие папки `_internal`, отвечающая за логику работы .exe файла. 
+В обоих случаях необходимо, чтобы исходный файл программы находился одной директории с папкой `db`, отвечающая за хранение всех необходимых файлов.
 
 `create_shortcut.bat` при нажатии создаст автоматически ярлык к `start_delegation_tasks.bat`, который по желанию, пользователь может переместить.
 
@@ -29,7 +29,7 @@ To use the program, simply download the repository zip archive. After installing
 > [!NOTE]
 > For the second method of activating the program, your device must support the Python programming language, be accessible via PATH, and have the PySide6 library available. Otherwise, `start_delegation_tasks.bat` will perform the installation itself.
 ### Terms of Use
-In both cases, the original program file must be located in the same directory as the `db` folder, which is responsible for storing all necessary files. If you are using the .exe version of the program, you must also have the `_internal` folder, which is responsible for the logic of the .exe file.
+In both cases, the original program file must be located in the same directory as the `db` folder, which is responsible for storing all necessary files.
 
 When clicked, `create_shortcut.bat` will automatically create a shortcut to `start_delegation_tasks.bat`, which the user can move if desired.
 
