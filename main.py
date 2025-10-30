@@ -759,6 +759,11 @@ class MainWindow(QWidget):
 
 
 class TaskCard(QFrame):
+    MIN_WIDTH = 280
+    MAX_WIDTH = 400
+    WIDTH_PERCENT = 1.0  # 100% доступной ширины
+    SCROLLBAR_MARGIN = 25
+
     def __init__(self, task_data, main_window=None, panel_title=None, on_edit_callback=None):
         super().__init__()
         self.task_data = task_data
@@ -772,26 +777,31 @@ class TaskCard(QFrame):
             border-radius: 10px;
             padding: 6px;
         """)
-
-        # Важный момент: высота формируется содержимым
+        self.setMinimumWidth(self.MIN_WIDTH)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         # --- главный layout ---
         vbox = QVBoxLayout(self)
         vbox.setContentsMargins(8, 8, 8, 8)
-        vbox.setSpacing(4)  # аккуратные отступы между элементами
+        vbox.setSpacing(6)  # отступы между элементами
 
         # --- Заголовок задания ---
         raw_name = task_data.get("name", "Без названия")
-        name_label = QLabel(raw_name)
-        name_label.setStyleSheet("font-size: 18px; font-weight: bold; color: black;")
-        name_label.setWordWrap(True)
-        name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-
+        self.name_label = QLabel(raw_name)
+        self.name_label.setStyleSheet("""
+            font-size: 18px; 
+            font-weight: bold; 
+            color: black;
+            margin: 0px;
+            padding: 0px;
+        """)
+        self.name_label.setWordWrap(True)
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         # Лейбл тянется в ширину, а по высоте растёт сам
-        name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-
-        vbox.addWidget(name_label)
+        self.name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # Минимальная высота для заголовка
+        self.name_label.setMinimumHeight(24)
+        vbox.addWidget(self.name_label)
 
         # --- Ответственные ---
         responsibles = task_data.get("responsible", [])
@@ -808,26 +818,47 @@ class TaskCard(QFrame):
 
         responsible_names_str = ", ".join(names) if names else "Не указано"
 
-        resp_label = QLabel(f"Ответственные: {responsible_names_str}")
-        resp_label.setStyleSheet("font-size: 16px; color: #333;")
-        resp_label.setWordWrap(True)
-        resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        resp_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        vbox.addWidget(resp_label)
+        self.resp_label = QLabel(f"Ответственные: {responsible_names_str}")
+        self.resp_label.setStyleSheet("font-size: 16px; color: #333;")
+        self.resp_label.setWordWrap(True)
+        self.resp_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.resp_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.resp_label.setMinimumHeight(20)
+        vbox.addWidget(self.resp_label)
 
         # --- Дата/срок ---
         self.time_label = QLabel()
+        self.time_label.setStyleSheet("margin: 0px; padding: 0px;")
         self.time_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.time_label.setMinimumHeight(18)
         vbox.addWidget(self.time_label)
 
         self.update_time_display()
 
     # --- динамическая подстройка ширины под зону скролла ---
     def resizeEvent(self, event):
-        if self.parent():
-            parent_width = self.parent().width()
-            self.setFixedWidth(parent_width - 20)
+        """Автоматически вызывается при изменении размера"""
+        self._update_card_width()
         super().resizeEvent(event)
+
+    def _update_card_width(self):
+        """Внутренний метод для обновления ширины карточки"""
+        if self.parent():
+            scroll_area = self.find_scroll_area_parent()
+            if scroll_area:
+                available_width = scroll_area.viewport().width() - self.SCROLLBAR_MARGIN
+                target_width = int(available_width * self.WIDTH_PERCENT)
+                target_width = max(self.MIN_WIDTH, min(self.MAX_WIDTH, target_width))
+                self.setFixedWidth(target_width)
+
+    def find_scroll_area_parent(self):
+        """Находит родительскую QScrollArea через цепочку родителей"""
+        parent = self.parent()
+        while parent:
+            if isinstance(parent, QScrollArea):
+                return parent
+            parent = parent.parent()
+        return None
 
     def update_time_display(self):
         # Если панель "Завершено" — скрываем/не показываем время
@@ -913,6 +944,7 @@ class TaskPanel(QFrame):
         self.layout.setContentsMargins(5, 5, 5, 5)
         self.layout.setSpacing(10)
         self.layout.addStretch()
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         # Снимок исходного порядка карточек (None, пока не сортировали)
         self._original_order = None
@@ -937,87 +969,87 @@ class TaskPanel(QFrame):
         self.layout.insertWidget(self.layout.count() - 1, card)
 
     def update_cards_time(self):
-        # пробегаем по виджетам в layout и обновляем время у TaskCard
-        for i in range(self.layout.count()):
-            item = self.layout.itemAt(i)
-            if not item:
-                continue
-            w = item.widget()
-            if w and isinstance(w, TaskCard):
-                w.update_time_display()
-
-    # --- вспомогательные функции ---
-    def _iter_cards(self):
-        for i in range(self.layout.count()):
-            item = self.layout.itemAt(i)
-            if not item:
-                continue
-            w = item.widget()
-            if w and isinstance(w, TaskCard):
-                yield w
-
-    def _current_cards(self):
-        return list(self._iter_cards())
-
-    def _rebuild_in_order(self, cards_in_order):
-        # удаляем и вставляем заново (перед stretch)
-        for c in cards_in_order:
-            self.layout.removeWidget(c)
-        for c in cards_in_order:
-            self.layout.insertWidget(self.layout.count() - 1, c)
+        """Обновляет время отображения во всех карточках"""
+        for card in self._iter_cards():
+            card.update_time_display()
 
     def apply_filter(self, filter_type):
-        now = QDateTime.currentDateTime()
-
-        def parse_datetime(date_str):
-            s = date_str or ""
-            dt = QDateTime.fromString(s, "dd.MM.yyyy HH:mm")
-            return dt if dt.isValid() else now
-
+        """Применяет фильтр к карточкам задач"""
         cards = self._current_cards()
 
-        # --- сброс фильтра ---
+        # Сброс фильтра
         if not filter_type:
             for card in cards:
                 card.show()
             if self._original_order:
-                order = [c for c in self._original_order if c in cards]
-                self._rebuild_in_order(order)
+                self._rebuild_in_order([c for c in self._original_order if c in cards])
                 self._original_order = None
             return
 
-        filtered_cards = cards
+        # Применение фильтров
+        filtered_cards = self._apply_filter_logic(cards, filter_type)
 
-        # --- фильтры ---
-        if filter_type == "with_deadline":
-            filtered_cards = [
-                c for c in cards
-                if not bool(c.task_data.get("no_deadline", False))
-                   and not bool(c.task_data.get("is_permanent", False))
-            ]
-        elif filter_type == "no_deadline":
-            filtered_cards = [c for c in cards if bool(c.task_data.get("no_deadline", False))]
-        elif filter_type == "permanent":
-            filtered_cards = [c for c in cards if bool(c.task_data.get("is_permanent", False))]
-        elif filter_type in ("long", "recent"):
-            if self._original_order is None:
-                self._original_order = cards[:]
-            filtered_cards = [c for c in cards if not bool(c.task_data.get("is_permanent", False))]
-            filtered_cards.sort(key=lambda c: parse_datetime(c.task_data.get("created_at")),
-                                reverse=(filter_type == "recent"))
-        elif isinstance(filter_type, tuple) and filter_type[0] == "by_members":
-            selected_ids = set(filter_type[1])
-            filtered_cards = [
-                c for c in cards
-                if selected_ids & set(c.task_data.get("responsible", []))
-            ]
-
-        # --- отображение ---
+        # Обновление отображения
         for card in cards:
             card.setVisible(card in filtered_cards)
 
         if filter_type in ("long", "recent"):
             self._rebuild_in_order(filtered_cards)
+
+    def _apply_filter_logic(self, cards, filter_type):
+        """Внутренняя логика применения фильтров"""
+        if filter_type == "with_deadline":
+            return [
+                c for c in cards
+                if not c.task_data.get("no_deadline", False)
+                and not c.task_data.get("is_permanent", False)
+            ]
+        elif filter_type == "no_deadline":
+            return [c for c in cards if c.task_data.get("no_deadline", False)]
+        elif filter_type == "permanent":
+            return [c for c in cards if c.task_data.get("is_permanent", False)]
+        elif filter_type in ("long", "recent"):
+            if self._original_order is None:
+                self._original_order = cards[:]
+            non_permanent = [c for c in cards if not c.task_data.get("is_permanent", False)]
+            return self._sort_by_date(non_permanent, reverse=(filter_type == "recent"))
+        elif isinstance(filter_type, tuple) and filter_type[0] == "by_members":
+            selected_ids = set(filter_type[1])
+            return [
+                c for c in cards
+                if selected_ids & set(c.task_data.get("responsible", []))
+            ]
+        return cards
+
+    # --- вспомогательные функции ---
+    def _sort_by_date(self, cards, reverse=False):
+        """Сортирует карточки по дате создания"""
+        def parse_datetime(date_str):
+            dt = QDateTime.fromString(date_str or "", "dd.MM.yyyy HH:mm")
+            return dt if dt.isValid() else QDateTime.currentDateTime()
+
+        cards.sort(key=lambda c: parse_datetime(c.task_data.get("created_at")), reverse=reverse)
+        return cards
+
+    def _iter_cards(self):
+        """Генератор для итерации по карточкам"""
+        for i in range(self.layout.count()):
+            item = self.layout.itemAt(i)
+            if item and (widget := item.widget()) and isinstance(widget, TaskCard):
+                yield widget
+
+    def _current_cards(self):
+        """Возвращает список всех карточек"""
+        return list(self._iter_cards())
+
+    def _rebuild_in_order(self, cards_in_order):
+        """Перестраивает порядок карточек"""
+        # Удаляем все карточки
+        for card in self._current_cards():
+            self.layout.removeWidget(card)
+        # Добавляем в новом порядке
+        for card in cards_in_order:
+            self.layout.insertWidget(self.layout.count() - 1, card)
 
 
 class TaskInfoDialog(QDialog):
@@ -1028,15 +1060,19 @@ class TaskInfoDialog(QDialog):
         self.status = status
         self.setWindowTitle(task_data.get("name", "Задача"))
         self.setModal(True)
-        self.setFixedSize(500, 300)
-
-        layout = QHBoxLayout(self)
+        self.setFixedSize(600, 400)
 
         # Основной блок
-        main_layout = QHBoxLayout()
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(15)
+
 
         # Левая часть: ответственный + даты
-        left_layout = QVBoxLayout()
+        left_widget = QWidget()
+        left_widget.setFixedWidth(200)  # Фиксированная ширина для левой части
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
 
         # Ответственный (аватар + имя)
         responsible_data = task_data.get("responsible", [])
@@ -1077,12 +1113,15 @@ class TaskInfoDialog(QDialog):
             avatar_label.setVisible(False)  # скрываем аватар
 
         # Создаём и добавляем подпись с именами
-        responsible_label = QLabel(
-            "Ответственные: " + ", ".join(responsible_names) if responsible_names else "Ответственный: Не назначен")
+        responsible_text = "Ответственные: " + ", ".join(responsible_names) if responsible_names else "Ответственный: Не назначен"
+        responsible_label = QLabel(responsible_text)
         responsible_label.setStyleSheet("font-size: 14px; color: white;")
+        responsible_label.setWordWrap(True) # перенос текста
+        responsible_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         left_layout.addWidget(avatar_label)
         left_layout.addWidget(responsible_label)
+        left_layout.addSpacing(10)
 
         # Время
         created_label = QLabel()
@@ -1101,46 +1140,77 @@ class TaskInfoDialog(QDialog):
 
         created_label.setStyleSheet("color: #ddd; font-size: 14px;")
         deadline_label.setStyleSheet("color: #ddd; font-size: 14px;")
+        created_label.setWordWrap(True)
+        deadline_label.setWordWrap(True)
 
         left_layout.addWidget(created_label)
         left_layout.addWidget(deadline_label)
         left_layout.addStretch()
-        main_layout.addLayout(left_layout)
 
         # Правая часть (описание)
-        right_frame = QFrame()
-        right_layout = QVBoxLayout(right_frame)
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
 
         desc_label = QLabel("Описание:")
         desc_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
 
         description = QTextBrowser()
         description.setOpenExternalLinks(True)
-        description.setStyleSheet("background-color: #222; color: white; font-size: 14px;")
+        description.setStyleSheet("""
+            QTextBrowser {
+                background-color: #222; 
+                color: white; 
+                font-size: 14px;
+                border: 1px solid #555;
+                border-radius: 5px;
+                padding: 8px;
+            }
+        """)
 
         html = task_data.get("description", "Нет описания")
-        description.setHtml(html)
         description.setHtml(html)
 
         right_layout.addWidget(desc_label)
         right_layout.addWidget(description)
-        main_layout.addWidget(right_frame)
 
-        layout.addLayout(main_layout)
+        main_layout.addWidget(left_widget)
+        main_layout.addWidget(right_widget)
 
         # --- Кнопка редактирования ---
         edit_btn = QPushButton()
         edit_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/edit_button.png")))
         edit_btn.setIconSize(QSize(20, 20))
         edit_btn.setFixedSize(30, 30)
-        edit_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        edit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50; 
+                color: white; 
+                font-weight: bold;
+                border: none;
+                border-radius: 15px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
         edit_btn.clicked.connect(self.edit_task)
-        layout.addWidget(edit_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+        edit_btn.setParent(self)
+        edit_btn.move(self.width() - 40, 10)
 
     def edit_task(self):
         if self.on_edit_callback:
             self.on_edit_callback(self.task_data, self.status)
         self.close()
+
+    def resizeEvent(self, event):
+        """Обновляем позицию кнопки при изменении размера"""
+        super().resizeEvent(event)
+        # Обновляем позицию кнопки редактирования
+        edit_btn = self.findChild(QPushButton)
+        if edit_btn:
+            edit_btn.move(self.width() - 40, 10)
 
 
 class ClickOutsideFilter(QObject):
@@ -1194,7 +1264,7 @@ class AddTaskOverlay(QFrame):
 
         # Панель
         panel = QFrame()
-        panel.setFixedSize(1000, 625)
+        panel.setFixedSize(1200, 700)
         panel.setStyleSheet("""
             background-color: #2a2a2a;
             border-radius: 20px;
@@ -1202,6 +1272,7 @@ class AddTaskOverlay(QFrame):
         """)
         panel_layout = QVBoxLayout(panel)
         panel_layout.setSpacing(15)
+        panel_layout.setContentsMargins(20, 20, 20, 20)
 
         # Верхняя панель с кнопкой закрытия
         top_bar = QHBoxLayout()
@@ -1219,18 +1290,27 @@ class AddTaskOverlay(QFrame):
         panel_layout.addLayout(top_bar)
 
         # Заголовок
-        title = QLabel("Создать задание")
+        title = QLabel("Редактировать задание" if self.edit_mode else "Создать задание")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 5px;")
+        title.setStyleSheet("""
+            font-size: 24px; 
+            font-weight: bold; 
+            margin-bottom: 5px;
+        """)
         panel_layout.addWidget(title)
 
         # Контент: 2 колонки
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(20)
+        content_widget = QWidget()
+        content_layout = QHBoxLayout(content_widget)
+        content_layout.setSpacing(30)
+        content_layout.setContentsMargins(0, 0, 0, 0)
 
         # Левая колонка
-        left_col = QVBoxLayout()
+        left_widget = QWidget()
+        left_widget.setFixedWidth(400)
+        left_col = QVBoxLayout(left_widget)
         left_col.setSpacing(15)
+        left_col.setContentsMargins(0, 0, 0, 0)
 
         # Название
         name_label = QLabel("Название задания")
@@ -1252,9 +1332,20 @@ class AddTaskOverlay(QFrame):
         self.responsible_dropdown_btn.setCheckable(True)
         self.responsible_dropdown_btn.setText("Выберите ответственных")
         self.responsible_dropdown_btn.setStyleSheet("""
-            padding: 10px; font-size: 16px; border-radius: 10px;
-            border: 1px solid #555; background-color: #3a3a3a; color: white;
+            QToolButton {
+                padding: 10px; 
+                font-size: 16px; 
+                border-radius: 10px;
+                border: 1px solid #555; 
+                background-color: #3a3a3a; 
+                color: white;
+                text-align: left;
+            }
+            QToolButton:hover {
+                background-color: #4a4a4a;
+            }
         """)
+        self.responsible_dropdown_btn.setFixedHeight(45)
 
         self.responsible_list_widget = QListWidget()
         self.responsible_list_widget.setWindowFlags(Qt.WindowType.Popup)  # Важно: popup окно
@@ -1263,11 +1354,15 @@ class AddTaskOverlay(QFrame):
             border: 1px solid #555; border-radius: 10px;
         """)
         self.responsible_list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self.responsible_list_widget.setFixedWidth(350)
 
         # Скрываем список из layout, он теперь отдельное окно
         self.responsible_list_widget.hide()
         self.responsible_dropdown_btn.toggled.connect(self.toggle_responsible_list)
         self.responsible_list_widget.itemChanged.connect(self.update_button_text)
+
+        # Загружаем участников в список СРАЗУ
+        self.load_members_into_list_widget()
 
         self.click_filter = ClickOutsideFilter(
             self,
@@ -1277,9 +1372,9 @@ class AddTaskOverlay(QFrame):
         QApplication.instance().installEventFilter(self.click_filter)
 
         # Добавляем в layout только кнопку и лейбл (список — отдельное окно)
-        self.load_members_into_list_widget()
         left_col.addWidget(self.responsible_label)
         left_col.addWidget(self.responsible_dropdown_btn)
+        left_col.addSpacing(10)
 
         # Время
         datetime_style = """
@@ -1335,117 +1430,183 @@ class AddTaskOverlay(QFrame):
         self.no_deadline_checkbox = QCheckBox("Задание без дедлайна")
         for cb in [self.permanent_checkbox, self.no_deadline_checkbox]:
             cb.setStyleSheet("""
-                QCheckBox { font-size: 14px; color: white; }
+                QCheckBox { 
+                    font-size: 14px; 
+                    color: white; 
+                    padding: 5px;
+                }
                 QCheckBox::indicator {
-                    width: 18px; height: 18px;
-                    border-radius: 3px; border: 2px solid white;
+                    width: 18px; 
+                    height: 18px;
+                    border-radius: 3px; 
+                    border: 2px solid white;
                     background-color: transparent;
                 }
-                QCheckBox::indicator:checked { background-color: white; }
+                QCheckBox::indicator:checked { 
+                    background-color: white; 
+                }
             """)
         left_col.addWidget(self.permanent_checkbox)
         left_col.addWidget(self.no_deadline_checkbox)
+        left_col.addStretch()
 
         # Логика чекбоксов
-        self.permanent_checkbox.stateChanged.connect(self.toggle_permanent_task)
-        self.no_deadline_checkbox.stateChanged.connect(self.toggle_no_deadline_task)
+        # self.permanent_checkbox.stateChanged.connect(self.toggle_permanent_task)
+        # self.no_deadline_checkbox.stateChanged.connect(self.toggle_no_deadline_task)
 
         # Правая колонка
-        right_col = QVBoxLayout()
+        right_widget = QWidget()
+        right_col = QVBoxLayout(right_widget)
+        right_col.setSpacing(15)
+        right_col.setContentsMargins(0, 0, 0, 0)
+
         desc_label = QLabel("Описание задания")
         desc_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.task_description = QTextEdit()
         self.task_description.setPlaceholderText("Введите описание...")
         self.task_description.setStyleSheet("""
-            padding: 10px; font-size: 16px; border-radius: 10px;
-            border: 1px solid #555; background-color: #3a3a3a; color: white;
+            QTextEdit {
+                padding: 15px; 
+                font-size: 16px; 
+                border-radius: 10px;
+                border: 1px solid #555; 
+                background-color: #3a3a3a; 
+                color: white;
+            }
         """)
+        self.task_description.setMinimumHeight(400)
         right_col.addWidget(desc_label)
         right_col.addWidget(self.task_description)
 
+        # Кнопка добавления ссылки
+        link_btn_layout = QHBoxLayout()
+        link_btn_layout.addStretch()
         link_btn = QPushButton()
         link_btn.setIcon(QIcon(os.path.join(base_dir, "db/images/interface/link_button.png")))
         link_btn.setIconSize(QSize(40, 40))
         link_btn.setFixedSize(40, 40)
-        link_btn.setStyleSheet("border: none;")
+        link_btn.setStyleSheet("""
+            QPushButton {
+                border: none; 
+                background-color: transparent;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                border-radius: 5px;
+            }
+        """)
         link_btn.setToolTip("Добавить ссылку")
         link_btn.clicked.connect(self.insert_link_into_description)
-        right_col.addWidget(link_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        link_btn_layout.addWidget(link_btn)
+        right_col.addLayout(link_btn_layout)
 
         # Объединяем колонки
-        content_layout.addLayout(left_col, 1)
-        content_layout.addLayout(right_col, 2)
-        panel_layout.addLayout(content_layout)
+        content_layout.addWidget(left_widget)
+        content_layout.addWidget(right_widget)
+        panel_layout.addWidget(content_widget)
 
         # Заполнение данных при редактировании
         if self.edit_mode and self.task_data:
-            self.task_name_input.setText(self.task_data.get("name", ""))
-            self.task_description.setHtml(self.task_data.get("description", ""))
+            self.fill_edit_data()
 
-            # Ответственные
-            responsibles = self.task_data.get("responsible", [])
-            if isinstance(responsibles, str):
-                responsibles = [responsibles]
-
-            for i in range(self.responsible_list_widget.count()):
-                item = self.responsible_list_widget.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) in responsibles:
-                    item.setCheckState(Qt.CheckState.Checked)
-
-            # Чекбоксы
-            self.permanent_checkbox.setChecked(self.task_data.get("is_permanent", False))
-            self.no_deadline_checkbox.setChecked(self.task_data.get("no_deadline", False))
-
-            # Даты
-            if self.task_data.get("created_at"):
-                self.created_at_edit.setDateTime(QDateTime.fromString(self.task_data["created_at"], "dd.MM.yyyy HH:mm"))
-            if self.task_data.get("deadline"):
-                self.deadline_edit.setDateTime(QDateTime.fromString(self.task_data["deadline"], "dd.MM.yyyy HH:mm"))
+        # Обновляем текст кнопки ответственных
+        self.update_button_text()
 
         # Определение кнопок при режиме создания и редактирования задания
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(20)
+        buttons_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         if not self.edit_mode:
             create_btn = QPushButton("Создать задание")
+            create_btn.setFixedSize(200, 50)
             create_btn.setStyleSheet("""
-                background-color: #4CAF50; color: white; font-size: 18px;
-                font-weight: bold; border: none; border-radius: 12px;
-                padding: 10px; margin-top: 5px;
+                QPushButton {
+                    background-color: #4CAF50; 
+                    color: white; 
+                    font-size: 18px;
+                    font-weight: bold; 
+                    border: none; 
+                    border-radius: 12px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
             """)
             create_btn.clicked.connect(self.create_new_task)
-            panel_layout.addWidget(create_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+            buttons_layout.addWidget(create_btn)
         else:
-            # Горизонтальный контейнер для кнопок
-            btn_layout = QHBoxLayout()
-            btn_layout.setSpacing(15)
-            btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
             save_btn = QPushButton("Сохранить изменения")
+            save_btn.setFixedSize(200, 50)
             save_btn.setStyleSheet("""
-                background-color: #4385AB; color: white; font-size: 18px;
-                font-weight: bold; border: none; border-radius: 12px;
-                padding: 10px;
+                QPushButton {
+                    background-color: #4385AB; 
+                    color: white; 
+                    font-size: 18px;
+                    font-weight: bold; 
+                    border: none; 
+                    border-radius: 12px;
+                }
+                QPushButton:hover {
+                    background-color: #3a7599;
+                }
             """)
             save_btn.clicked.connect(self.save_task)
-            btn_layout.addWidget(save_btn)
+            buttons_layout.addWidget(save_btn)
 
             delete_btn = QPushButton("Удалить задание")
+            delete_btn.setFixedSize(200, 50)
             delete_btn.setStyleSheet("""
-                background-color: #E62525; color: white; font-size: 18px;
-                font-weight: bold; border: none; border-radius: 12px;
-                padding: 10px;
+                QPushButton {
+                    background-color: #E62525; 
+                    color: white; 
+                    font-size: 18px;
+                    font-weight: bold; 
+                    border: none; 
+                    border-radius: 12px;
+                }
+                QPushButton:hover {
+                    background-color: #d42020;
+                }
             """)
             delete_btn.clicked.connect(self.delete_task)
-            btn_layout.addWidget(delete_btn)
+            buttons_layout.addWidget(delete_btn)
 
-            # Добавляем оба рядом
-            panel_layout.addLayout(btn_layout)
-
+        panel_layout.addLayout(buttons_layout)
         layout.addWidget(panel)
+
+    def fill_edit_data(self):
+        """Заполняет данные при редактировании задачи"""
+        self.task_name_input.setText(self.task_data.get("name", ""))
+        self.task_description.setHtml(self.task_data.get("description", ""))
+
+        # Ответственные - ВАЖНО: устанавливаем чекбоксы после загрузки списка
+        responsibles = self.task_data.get("responsible", [])
+        if isinstance(responsibles, str):
+            responsibles = [responsibles]
+
+        # Устанавливаем выбранных ответственных
+        for i in range(self.responsible_list_widget.count()):
+            item = self.responsible_list_widget.item(i)
+            member_id = item.data(Qt.ItemDataRole.UserRole)
+            if member_id in responsibles:
+                item.setCheckState(Qt.CheckState.Checked)
+
+        # Чекбоксы
+        self.permanent_checkbox.setChecked(self.task_data.get("is_permanent", False))
+        self.no_deadline_checkbox.setChecked(self.task_data.get("no_deadline", False))
+
+        # Даты
+        if self.task_data.get("created_at"):
+            self.created_at_edit.setDateTime(QDateTime.fromString(self.task_data["created_at"], "dd.MM.yyyy HH:mm"))
+        if self.task_data.get("deadline"):
+            self.deadline_edit.setDateTime(QDateTime.fromString(self.task_data["deadline"], "dd.MM.yyyy HH:mm"))
 
     def toggle_responsible_list(self, checked):
         if checked:
             pos = self.responsible_dropdown_btn.mapToGlobal(QPoint(0, self.responsible_dropdown_btn.height()))
             self.responsible_list_widget.move(pos)
-            self.responsible_list_widget.resize(250, 200)
+            self.responsible_list_widget.resize(350, 200)
             self.responsible_list_widget.show()
             self.responsible_list_visible = True
         else:
@@ -1458,6 +1619,7 @@ class AddTaskOverlay(QFrame):
         self.responsible_list_visible = False
 
     def update_button_text(self):
+        """Обновляет текст кнопки выбора ответственных"""
         selected_names = []
         for i in range(self.responsible_list_widget.count()):
             item = self.responsible_list_widget.item(i)
@@ -1465,11 +1627,16 @@ class AddTaskOverlay(QFrame):
                 selected_names.append(item.text())
 
         if selected_names:
-            self.responsible_dropdown_btn.setText(", ".join(selected_names))
+            # Обрезаем текст если слишком длинный
+            text = ", ".join(selected_names)
+            if len(text) > 35:
+                text = text[:35] + "..."
+            self.responsible_dropdown_btn.setText(text)
         else:
             self.responsible_dropdown_btn.setText("Выберите ответственных")
 
     def load_members_into_list_widget(self):
+        """Загружает участников в выпадающий список"""
         self.responsible_list_widget.clear()
         json_path = os.path.join(base_dir, "db/members.json")
 
@@ -1482,28 +1649,16 @@ class AddTaskOverlay(QFrame):
                     item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
                     item.setCheckState(Qt.CheckState.Unchecked)
                     self.responsible_list_widget.addItem(item)
+                    # Сохраняем mapping для быстрого доступа
+                    self.members_map[member["id"]] = member["name"]
 
     def get_selected_responsible_ids(self):
-        json_path = os.path.join(base_dir, "db/members.json")
-
-        if os.path.exists(json_path):
-            with open(json_path, "r", encoding="utf-8") as f:
-                members = json.load(f)
-                for member in members:
-                    name = member["name"]
-                    member_id = member["id"]
-                    self.members_map[name] = member_id
-
-                    item = QListWidgetItem(name)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    self.responsible_list_widget.addItem(item)
-
+        """Возвращает список ID выбранных ответственных"""
         ids = []
         for i in range(self.responsible_list_widget.count()):
             item = self.responsible_list_widget.item(i)
             if item.checkState() == Qt.CheckState.Checked:
-                member_id = self.members_map.get(item.text())
+                member_id = item.data(Qt.ItemDataRole.UserRole)
                 if member_id:
                     ids.append(member_id)
         return ids
@@ -1556,13 +1711,19 @@ class AddTaskOverlay(QFrame):
             QMessageBox.warning(self, "Ошибка", "Название задания обязательно!")
             return
 
-        # 2. Проверка на оба чекбокса
+        # 2. Проверка на ответственных
+        responsible_ids = self.get_selected_responsible_ids()
+        if not responsible_ids:
+            QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного ответственного!")
+            return
+
+        # 3. Проверка на оба чекбокса
         if self.permanent_checkbox.isChecked() and self.no_deadline_checkbox.isChecked():
             QMessageBox.warning(self, "Ошибка",
                                 "Нельзя одновременно выбрать 'Постоянное задание' и 'Задание без дедлайна'.")
             return
 
-        # 3. Проверка на дедлайн >= дата создания (только если поля активны)
+        # 4. Проверка на дедлайн >= дата создания (только если поля активны)
         if not self.permanent_checkbox.isChecked() and not self.no_deadline_checkbox.isChecked():
             created_dt = self.created_at_edit.dateTime()
             deadline_dt = self.deadline_edit.dateTime()
@@ -1570,7 +1731,7 @@ class AddTaskOverlay(QFrame):
                 QMessageBox.warning(self, "Ошибка", "Дедлайн не может быть раньше даты создания.")
                 return
 
-        # 4. Генерация ID
+        # 5. Генерация ID
         def generate_unique_id():
             all_task_files = [
                 os.path.join(base_dir, "db/tasks/draft_tasks.json"),
@@ -1581,24 +1742,26 @@ class AddTaskOverlay(QFrame):
 
             while True:
                 new_id = str(uuid.uuid4())
-                if not any(task.get("id") == new_id for file_path in all_task_files if os.path.exists(file_path)
-                           for task in json.load(open(file_path, "r", encoding="utf-8"))):
+                # Проверяем уникальность ID во всех файлах
+                unique = True
+                for file_path in all_task_files:
+                    if os.path.exists(file_path):
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            tasks = json.load(f)
+                            if any(task.get("id") == new_id for task in tasks):
+                                unique = False
+                                break
+                if unique:
                     return new_id
 
         new_task_id = generate_unique_id()
 
-        # 5. Загружаем существующие задания
+        # 6. Загружаем существующие задания
         tasks_path = os.path.join(base_dir, "db/tasks/draft_tasks.json")
         tasks = []
         if os.path.exists(tasks_path):
             with open(tasks_path, "r", encoding="utf-8") as f:
                 tasks = json.load(f)
-
-        # 6. Проверка на отсутствие ответственных
-        responsible_ids = self.get_selected_responsible_ids()
-        if not responsible_ids:
-            QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного ответственного!")
-            return
 
         # 7. Формирование задания
         task_data = {
@@ -1614,7 +1777,7 @@ class AddTaskOverlay(QFrame):
             "no_deadline": self.no_deadline_checkbox.isChecked(),
         }
 
-        # 7. Сохраняем
+        # 8. Сохраняем
         tasks.append(task_data)
         with open(tasks_path, "w", encoding="utf-8") as f:
             json.dump(tasks, f, ensure_ascii=False, indent=4)
@@ -1629,20 +1792,16 @@ class AddTaskOverlay(QFrame):
 
     def save_task(self):
         task_name = self.task_name_input.text().strip()
-        responsible_ids = []
 
-        # 1. Проверка на отсутствие ответственных
-        for i in range(self.responsible_list_widget.count()):
-            item = self.responsible_list_widget.item(i)
-            if item.checkState() == Qt.CheckState.Checked:
-                responsible_ids.append(item.data(Qt.ItemDataRole.UserRole))
-        if not responsible_ids:
-            QMessageBox.warning(self, "Ошибка", "У заданий должен быть ответственный!")
-            return
-
-        # 2. Проверка на пустое название
+        # 1. Проверка на пустое название
         if not task_name:
             QMessageBox.warning(self, "Ошибка", "Название задания обязательно!")
+            return
+
+        # 2. Проверка на ответственных
+        responsible_ids = self.get_selected_responsible_ids()
+        if not responsible_ids:
+            QMessageBox.warning(self, "Ошибка", "Выберите хотя бы одного ответственного!")
             return
 
         # 3. Проверка на оба чекбокса
