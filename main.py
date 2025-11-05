@@ -1451,8 +1451,12 @@ class AddTaskOverlay(QFrame):
         left_col.addStretch()
 
         # Логика чекбоксов
-        # self.permanent_checkbox.stateChanged.connect(self.toggle_permanent_task)
-        # self.no_deadline_checkbox.stateChanged.connect(self.toggle_no_deadline_task)
+        self.permanent_checkbox.stateChanged.connect(self.toggle_permanent_task)
+        self.no_deadline_checkbox.stateChanged.connect(self.toggle_no_deadline_task)
+
+        # Инициализируем начальное состояние полей
+        self.toggle_permanent_task(0)
+        self.toggle_no_deadline_task(0)
 
         # Правая колонка
         right_widget = QWidget()
@@ -1580,7 +1584,7 @@ class AddTaskOverlay(QFrame):
         self.task_name_input.setText(self.task_data.get("name", ""))
         self.task_description.setHtml(self.task_data.get("description", ""))
 
-        # Ответственные - ВАЖНО: устанавливаем чекбоксы после загрузки списка
+        # Ответственные - устанавливаем чекбоксы после загрузки списка
         responsibles = self.task_data.get("responsible", [])
         if isinstance(responsibles, str):
             responsibles = [responsibles]
@@ -1595,6 +1599,10 @@ class AddTaskOverlay(QFrame):
         # Чекбоксы
         self.permanent_checkbox.setChecked(self.task_data.get("is_permanent", False))
         self.no_deadline_checkbox.setChecked(self.task_data.get("no_deadline", False))
+
+        # Вызываем оба метода для установки правильного состояния
+        self.toggle_permanent_task(0)
+        self.toggle_no_deadline_task(0)
 
         # Даты
         if self.task_data.get("created_at"):
@@ -1664,7 +1672,8 @@ class AddTaskOverlay(QFrame):
         return ids
 
     def toggle_permanent_task(self, state):
-        if state == Qt.CheckState.Checked:
+        """Управляет состоянием полей дат при включении/выключении постоянного задания"""
+        if self.permanent_checkbox.isChecked():
             # Блокируем оба поля
             self.created_at_edit.setEnabled(False)
             self.deadline_edit.setEnabled(False)
@@ -1673,12 +1682,14 @@ class AddTaskOverlay(QFrame):
             self.no_deadline_checkbox.setChecked(False)
             self.no_deadline_checkbox.blockSignals(False)
         else:
-            # Разблокируем оба
-            self.created_at_edit.setEnabled(True)
-            self.deadline_edit.setEnabled(True)
+            # Разблокируем оба, если не включен no_deadline
+            if not self.no_deadline_checkbox.isChecked():
+                self.created_at_edit.setEnabled(True)
+                self.deadline_edit.setEnabled(True)
 
     def toggle_no_deadline_task(self, state):
-        if state == Qt.CheckState.Checked:
+        """Управляет состоянием поля дедлайна при включении/выключении задания без дедлайна"""
+        if self.no_deadline_checkbox.isChecked():
             # Блокируем только дедлайн
             self.deadline_edit.setEnabled(False)
             # Снимаем другой чекбокс
@@ -1686,6 +1697,7 @@ class AddTaskOverlay(QFrame):
             self.permanent_checkbox.setChecked(False)
             self.permanent_checkbox.blockSignals(False)
             # При этом created_at остается активным
+            self.created_at_edit.setEnabled(True)
         else:
             # Разблокируем дедлайн, если не включен permanent
             if not self.permanent_checkbox.isChecked():
